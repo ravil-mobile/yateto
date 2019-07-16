@@ -207,7 +207,10 @@ class LoGCost(object):
     return self._totuple() == other._totuple() and self._leftTranspose == other._leftTranspose
   
   def __add__(self, other):
-    return LoGCost(self._stride + other._stride, self._leftTranspose + other._leftTranspose, self._rightTranspose + other._rightTranspose, self._fusedIndices + other._fusedIndices)
+    return LoGCost(self._stride + other._stride,
+                   self._leftTranspose + other._leftTranspose,
+                   self._rightTranspose + other._rightTranspose,
+                   self._fusedIndices + other._fusedIndices)
   
   def __repr__(self):
     return '{{stride: {}, left transpose: {}, right transpose: {}, fused indices: {}}}'.format(self._stride, self._leftTranspose, self._rightTranspose, self._fusedIndices)

@@ -7,7 +7,12 @@ from ..controlflow.visitor import ScalarsSet, SortedGlobalsList, SortedPrefetchL
 from ..controlflow.transformer import DetermineLocalInitialization
 from ..controlflow.graph import Variable
 from .code import Cpp
+
+
 from .factory import *
+from .visitor import KernelGenerator
+from .cuda_factory import *
+
 
 SUPPORT_LIBRARY_NAMESPACE = 'yateto'
 CONSTEXPR = 'constexpr'
@@ -40,43 +45,83 @@ def indexFun(stride):
   args = ndargs(len(stride))
   return ' + '.join(['{}*{}'.format(stride, arg) for stride,arg in zip(stride,args)])
 
-class KernelGenerator(object):
+class CudaKernelGenerator(object):
   PREFETCHSTRUCT_NAME = 'Prefetch'
   PREFETCHVAR_NAME = '_prefetch'
   BUFFER_NAME = '_buffer'
+  CUDA_BUFFER_NAME = 'd_buffer'
+
 
   def __init__(self, arch):
     self._arch = arch
 
+
   @classmethod
   def _bufferName(cls, buf):
     return cls.BUFFER_NAME + str(buf)
-  
+
+
+  @classmethod
+  def _get_cuda_buffer_name(cls, buffer):
+    return cls.CUDA_BUFFER_NAME + str(buffer)
+
+
   def generate(self, cpp, cfg, factory,  routineCache, gemm_cfg):
     hwFlops = 0
     cfg = DetermineLocalInitialization().visit(cfg)
-    localPtrs = list()
-    for pp in cfg:
-      localPtrs.extend(pp.bufferMap.keys())
-    if localPtrs:
-      cpp( '{}{};'.format(self._arch.typename, ','.join(map(lambda x: ' *' + str(x), localPtrs))) )
-    for pp in cfg:
-      for buf, size in pp.initBuffer.items():
-        bufname = self._bufferName(buf)
-        factory.temporary(bufname, size)
-      for local, buf in pp.bufferMap.items():
-        cpp('{} = {};'.format(local, self._bufferName(buf)))
-      action = pp.action
+    temp_pointers = list()
+
+    # collect all pointer to temp variables
+    for program_point in cfg:
+      temp_pointers.extend(program_point.bufferMap.keys())
+
+    # declare pointers to temp variables
+    if temp_pointers:
+      cpp('{}{};'.format(self._arch.typename,
+                         ','.join(map(lambda x: ' *' + str(x), temp_pointers))))
+
+
+    cpp('// TODO: allocate all buffers at the main entry point of the program')
+    for program_point in cfg:
+
+      # collect all buffers (scratch memory) and allocate memory for them
+      # TODO: perform memory allocation of buffers at the program entry point
+
+      for buffer, size in program_point.initBuffer.items():
+        #buffer_name = self._bufferName(buffer)
+        buffer_name = self._get_cuda_buffer_name(buffer)
+        factory.cuda_temporary(buffer_name, size)
+
+      for local, buffer in program_point.bufferMap.items():
+        #cpp('{} = {};'.format(local, self._bufferName(buffer)))
+        cpp('{} = {};'.format(local, self._get_cuda_buffer_name(buffer)))
+
+      action = program_point.action
       if action:
         scalar = 1.0 if action.scalar is None else action.scalar
         if action.isRHSExpression():
-          prefetchName = '{}.{}'.format(self.PREFETCHVAR_NAME, action.term.node.prefetch.name()) if action.term.node.prefetch is not None else None
-          hwFlops += factory.create(action.term.node, action.result, action.term.variableList(), action.add, scalar, prefetchName, routineCache, gemm_cfg)
+          prefetchName = '{}.{}'.format(self.PREFETCHVAR_NAME,
+                                        action.term.node.prefetch.name()) if action.term.node.prefetch is not None else None
+
+          hwFlops += factory.create(action.term.node,
+                                    action.result,
+                                    action.term.variableList(),
+                                    action.add,
+                                    scalar,
+                                    prefetchName,
+                                    routineCache,
+                                    gemm_cfg)
         else:
           hwFlops += factory.simple(action.result, action.term, action.add, scalar, routineCache)
+
+    for program_point in cfg:
+      for buffer, size in program_point.initBuffer.items():
+        buffer_name = self._get_cuda_buffer_name(buffer)
+        factory.cuda_delete_temporary(buffer_name)
+
     return hwFlops
 
-class OptimisedKernelGenerator(KernelGenerator):
+class CudaOptimisedKernelGenerator(CudaKernelGenerator):
   NAMESPACE = 'kernel'
   EXECUTE_NAME = 'execute'
   FIND_EXECUTE_NAME = 'findExecute'
@@ -110,34 +155,72 @@ class OptimisedKernelGenerator(KernelGenerator):
         tensors[bn] = tensors[bn] | {g}
       else:
         tensors[bn] = {g}
-  
+
+
   def generateKernelOutline(self, nonZeroFlops, cfg, gemm_cfg):
+    """
+
+    Args:
+      nonZeroFlops: TODO: ask Carsten
+      cfg: control flow graph
+      gemm_cfg: list of gemm generators
+
+    Returns:
+      an instance of KernelOutline
+    """
+
+    # iterate through a give control flow graph
+    # and collect info about scalars and variables
     scalars = ScalarsSet().visit(cfg)
     variables = SortedGlobalsList().visit(cfg)
+
     tensors = collections.OrderedDict()
     writable = dict()
+
+    # iterate through all variable of the control flow graph
     for var in variables:
+      # add tensors to a list
       self.KernelOutline._addTensor(var.tensor, tensors)
-      bn = var.tensor.baseName()
-      if bn in writable:
+
+
+      base_name = var.tensor.baseName()
+      if base_name in writable:
         if var.writable:
-          writable[bn] = True
+          writable[base_name] = True
       else:
-        writable[bn] = var.writable
+        writable[base_name] = var.writable
+
 
     prefetchTensors = SortedPrefetchList().visit(cfg)
     prefetch = collections.OrderedDict()
     for tensor in prefetchTensors:
       self.KernelOutline._addTensor(tensor, prefetch)
 
+
+    # generate C-code for tensor contraction and write to an StringIO instance
     functionIO = StringIO()
     function = ''
     with Cpp(functionIO) as fcpp:
-      factory = OptimisedKernelFactory(fcpp, self._arch)
-      hwFlops = super().generate(fcpp, cfg, factory, self._routineCache, gemm_cfg)
+
+      # select a factory
+      factory = CudaOptimisedKernelFactory(fcpp, self._arch)
+
+      # generate C-code from the control from graph using the factory and a given GEMM method
+      hwFlops = super().generate(cpp=fcpp,
+                                 cfg=cfg,
+                                 factory=factory,
+                                 routineCache=self._routineCache,
+                                 gemm_cfg=gemm_cfg)
+
+      # free temporary variables in case if there were allocate on the heap
       factory.freeTmp()
-      function = functionIO.getvalue()    
+
+      # get generated code as a text from the StringIO instance
+      function = functionIO.getvalue()
+
+
     return self.KernelOutline(nonZeroFlops, hwFlops, tensors, writable, prefetch, scalars, function)
+
 
   @classmethod
   def _addFromKO(cls, koEntries, entries):
@@ -149,16 +232,28 @@ class OptimisedKernelGenerator(KernelGenerator):
     
 
   def generate(self, cpp, header, name, kernelOutlines, familyStride=None):
+    """
+    Generates both source and header files for a given kernel
+    Args:
+      cpp: a handle for the source file
+      header: a handle for the source file
+      name: name of a kernel
+      kernelOutlines: TODO: ???
+      familyStride: TODO: ???
+
+    Returns:
+
+    """
     tensors = collections.OrderedDict()
     prefetch = collections.OrderedDict()
     writable = dict()
     scalars = set()
-    for ko in kernelOutlines:
-      if ko:
-        scalars = scalars | ko.scalars
-        self._addFromKO(ko.tensors, tensors)
-        self._addFromKO(ko.writable, writable)
-        self._addFromKO(ko.prefetch, prefetch)
+    for outline in kernelOutlines:
+      if outline:
+        scalars = scalars | outline.scalars
+        self._addFromKO(outline.tensors, tensors)
+        self._addFromKO(outline.writable, writable)
+        self._addFromKO(outline.prefetch, prefetch)
 
     scalars = sorted(list(scalars), key=str)
 
@@ -167,48 +262,55 @@ class OptimisedKernelGenerator(KernelGenerator):
       formatArray = lambda lst: '{{{}}}'.format(', '.join([str(l) for l in lst]))
       brackets = '[]'
     else:
+      # TODO: ask what the purpose of these helper functions is
       executeName = lambda index: self.EXECUTE_NAME
       formatArray = lambda lst: lst[0]
       brackets = ''
 
     with header.Namespace(self.NAMESPACE):
       with header.Struct(name):
-        header('{} {} const {}{} = {};'.format(
-          MODIFIERS,
-          self._arch.ulongTypename,
-          self.NONZEROFLOPS_NAME,
-          brackets,
-          formatArray([kernelOutline.nonZeroFlops if kernelOutline else 0 for kernelOutline in kernelOutlines])
-        ))
-        header('{} {} const {}{} = {};'.format(
-          MODIFIERS,
-          self._arch.ulongTypename,
-          self.HARDWAREFLOPS_NAME,
-          brackets,
-          formatArray([kernelOutline.hwFlops if kernelOutline else 0 for kernelOutline in kernelOutlines])
-        ))
+
+        # add declarations of profiling counters to a header file
+        header('{} {} const {}{} = {};'.format(MODIFIERS,
+                                               self._arch.ulongTypename,
+                                               self.NONZEROFLOPS_NAME,
+                                               brackets,
+                                               formatArray([kernelOutline.nonZeroFlops
+                                                            if kernelOutline else 0
+                                                            for kernelOutline in kernelOutlines])))
+
+        header('{} {} const {}{} = {};'.format(MODIFIERS,
+                                               self._arch.ulongTypename,
+                                               self.HARDWAREFLOPS_NAME,
+                                               brackets,
+                                               formatArray([kernelOutline.hwFlops
+                                                            if kernelOutline else 0
+                                                            for kernelOutline in kernelOutlines])))
         header.emptyline()
-        
+
+
         for scalar in scalars:
           header('{0} {1} = std::numeric_limits<{0}>::signaling_NaN();'.format(self._arch.typename, scalar))
-        
+
+
+        # declare a helper function to generate a kernel header file
         def kernelArgs(baseName, groups, writable):
           typ = self._arch.typename
           if not writable:
             typ += ' const'
           if len(next(iter(groups))) > 0:
-            header('{0}::{1}::{2}<{3}*> {1};'.format(
-              InitializerGenerator.TENSOR_NAMESPACE,
-              baseName,
-              InitializerGenerator.CONTAINER_CLASS_NAME,
-              typ
-            ))
+            header('{0}::{1}::{2}<{3}*> {1};'.format(CudaInitializerGenerator.TENSOR_NAMESPACE,
+                                                     baseName,
+                                                     CudaInitializerGenerator.CONTAINER_CLASS_NAME,
+                                                     typ))
           else:
             header('{}* {}{{}};'.format(typ, baseName))
-        
+
+        # generate the body of a kernel header file: expose global kernel pointers
         for baseName, groups in tensors.items():
           kernelArgs(baseName, groups, writable[baseName])
         header.emptyline()
+
 
         if len(prefetch) > 0:
           with header.Struct(self.PREFETCHSTRUCT_NAME):
@@ -217,69 +319,97 @@ class OptimisedKernelGenerator(KernelGenerator):
           header('{} {};'.format(self.PREFETCHSTRUCT_NAME, self.PREFETCHVAR_NAME))
           header.emptyline()
 
+
+        # add function declarations to the kernel header
         for index, kernelOutline in enumerate(kernelOutlines):
           if kernelOutline:
             header.functionDeclaration(executeName(index))
 
+
+        # TODO: ask what familyStride is
         if familyStride is not None:
           header('typedef void ({}::* const {})(void);'.format(name, self.MEMBER_FUNCTION_PTR_NAME))
-          header('{} {} {}[] = {};'.format(
-            MODIFIERS,
-            self.MEMBER_FUNCTION_PTR_NAME,
-            self.EXECUTE_ARRAY_NAME,
-            formatArray(['&{}::{}'.format(name, executeName(index)) if kernelOutline else 'nullptr' for index, kernelOutline in enumerate(kernelOutlines)])
-          ))
+          header('{} {} {}[] = {};'.format(MODIFIERS,
+                                           self.MEMBER_FUNCTION_PTR_NAME,
+                                           self.EXECUTE_ARRAY_NAME,
+                                           formatArray(['&{}::{}'.format(name, executeName(index))
+                                                        if kernelOutline else 'nullptr'
+                                                        for index, kernelOutline in enumerate(kernelOutlines)])))
+
+
           args = typedNdArgs(len(familyStride), self._arch.uintTypename)
           indexF = indexFun(familyStride)
-          with header.Function(self.FIND_EXECUTE_NAME, args, '{} {}'.format(MODIFIERS, self.MEMBER_FUNCTION_PTR_NAME)):
+
+          with header.Function(self.FIND_EXECUTE_NAME, args, '{} {}'.format(MODIFIERS,
+                                                                            self.MEMBER_FUNCTION_PTR_NAME)):
             header('return {}[{}];'.format(self.EXECUTE_ARRAY_NAME, indexF))
+
           with header.Function(self.EXECUTE_NAME, args, '{} void'.format(INLINE)):
             header('(this->*{}({}))();'.format(self.FIND_EXECUTE_NAME, ', '.join(ndargs(len(familyStride)))))
 
           flopFuns = [self.NONZEROFLOPS_NAME, self.HARDWAREFLOPS_NAME]
+
           for flopFun in flopFuns:
             funName = flopFun[:1].lower() + flopFun[1:]
             with header.Function(funName, args, '{} {}'.format(MODIFIERS, self._arch.ulongTypename)):
               header('return {}[{}];'.format(flopFun, indexF))
 
+
+    # declare flop counter variables in the kernel source file
     flopCounters = [self.NONZEROFLOPS_NAME, self.HARDWAREFLOPS_NAME]
-    for fc in flopCounters:
-      cpp('{} {} const {}::{}::{}{};'.format(
-        CONSTEXPR,
-        self._arch.ulongTypename,
-        self.NAMESPACE,
-        name,
-        fc,
-        brackets
-      ))
+    for counter in flopCounters:
+      cpp('{} {} const {}::{}::{}{};'.format(CONSTEXPR,
+                                             self._arch.ulongTypename,
+                                             self.NAMESPACE,
+                                             name,
+                                             counter,
+                                             brackets))
+
     if familyStride is not None:
-      cpp('{0} {1}::{2}::{3} {1}::{2}::{4}[];'.format(
-        CONSTEXPR,
-        self.NAMESPACE,
-        name,
-        self.MEMBER_FUNCTION_PTR_NAME,
-        self.EXECUTE_ARRAY_NAME
-      ))
+      cpp('{0} {1}::{2}::{3} {1}::{2}::{4}[];'.format(CONSTEXPR,
+                                                      self.NAMESPACE,
+                                                      name,
+                                                      self.MEMBER_FUNCTION_PTR_NAME,
+                                                      self.EXECUTE_ARRAY_NAME))
+
+
     for index, kernelOutline in enumerate(kernelOutlines):
       if kernelOutline is None:
         continue
 
+      # generate a kernel body
       with cpp.Function('{}::{}::{}'.format(self.NAMESPACE, name, executeName(index))):
-        sclrs = sorted(list(kernelOutline.scalars), key=str)
-        for scalar in sclrs:
+        scalars = sorted(list(kernelOutline.scalars), key=str)
+
+        # check whether scalars used in a tensor equation
+        # were assigned to some numerical values
+        for scalar in scalars:
           cpp('assert(!std::isnan({}));'.format(scalar))
+
+
+        # iterate through each tensor defined in an equation
         for baseName, groups in kernelOutline.tensors.items():
+
           if len(next(iter(groups))) > 0:
+            # TODO: ask what gis stands for
             for gis in groups:
+
+              # check whether tensor pointers are not equal to zero
+              # i.e. points to some chunck of memory
+              # TODO: ask what gi stands for
               cpp('assert({}({}) != nullptr);'.format(baseName, ','.join(str(gi) for gi in gis)))
+
           else:
             cpp('assert({} != nullptr);'.format(baseName))
+
+        # generate kernel logic
         cpp(kernelOutline.function)
 
-class UnitTestGenerator(KernelGenerator):
+
+class CudaUnitTestGenerator(CudaKernelGenerator):
   KERNEL_VAR = 'krnl'
   CXXTEST_PREFIX = 'test'
-  
+
   def __init__(self, arch):
     super().__init__(arch)
 
@@ -291,6 +421,19 @@ class UnitTestGenerator(KernelGenerator):
     group = var.tensor.group()
     terms = [baseName] + [str(g) for g in group]
     return '_'.join(terms)
+
+  @classmethod
+  def _get_gpu_tensor_name(cls, var):
+    prefix = "d_"
+
+    if var.isLocal():
+      return prefix + str(var)
+
+    baseName = prefix + var.tensor.baseName()
+    group = var.tensor.group()
+    terms = [baseName] + [str(g) for g in group]
+    return prefix.join(terms)
+
 
   @classmethod
   def _name(cls, var):
@@ -313,19 +456,32 @@ class UnitTestGenerator(KernelGenerator):
     gstr = self._groupStr(var)
     return '({})'.format(gstr) if gstr else ''
   
-  def generate(self, cpp, testName, kernelClass, cfg, gemm_cfg, index=None):
+  def generate(self, cpp, testName, kernelClass, cfg, gemm_cfg, index=None, function_namespace=""):
     scalars = ScalarsSet().visit(cfg)
     scalars = sorted(scalars, key=str)
     variables = SortedGlobalsList().visit(cfg)
-    with cpp.Function(self.CXXTEST_PREFIX + testName):
-      factory = UnitTestFactory(cpp, self._arch, self._name)
 
-      for i,scalar in enumerate(scalars):
+
+    if function_namespace:
+      function_name = function_namespace + "::" + self.CXXTEST_PREFIX + testName
+    else:
+      function_name = self.CXXTEST_PREFIX + testName
+
+
+    with cpp.Function(function_name):
+      cuda_factory = CudaUnitTestFactory(cpp, self._arch, self._name)
+      cpu_factory = UnitTestFactory(cpp, self._arch, self._name)
+
+      for i, scalar in enumerate(scalars):
         cpp('{} {} = {};'.format(self._arch.typename, scalar, float(i+2)))
         
       for var in variables:
-        factory.tensor(var.tensor, self._tensorName(var))
-        factory.temporary(self._name(var), var.memoryLayout().requiredReals(), iniZero=True)
+        # allocate and init tensors on CPU
+        cuda_factory.tensor(var.tensor, self._tensorName(var))
+        cuda_factory.temporary(self._name(var),
+                               var.memoryLayout().requiredReals(),
+                               iniZero=True)
+
         
         shape = var.memoryLayout().shape()
         cpp('{supportNS}::DenseTensorView<{dim},{arch.typename},{arch.uintTypename}> {viewName}({utName}, {{{shape}}}, {{{start}}}, {{{shape}}});'.format(
@@ -339,36 +495,73 @@ class UnitTestGenerator(KernelGenerator):
           )
         )
         cpp( '{initNS}::{baseName}::{viewStruct}{groupTemplate}::{createFun}({name}).copyToView({viewName});'.format(
-            initNS = InitializerGenerator.INIT_NAMESPACE,
+            initNS = CudaInitializerGenerator.INIT_NAMESPACE,
             supportNS = SUPPORT_LIBRARY_NAMESPACE,
             groupTemplate=self._groupTemplate(var),
             baseName=var.tensor.baseName(),
             name=self._tensorName(var),
             viewName=self._viewName(var),
-            viewStruct=InitializerGenerator.VIEW_STRUCT_NAME,
-            createFun=InitializerGenerator.VIEW_FUN_NAME
+            viewStruct=CudaInitializerGenerator.VIEW_STRUCT_NAME,
+            createFun=CudaInitializerGenerator.VIEW_FUN_NAME
           )
         )
         cpp.emptyline()
 
-      cpp( '{}::{} {};'.format(OptimisedKernelGenerator.NAMESPACE, kernelClass, self.KERNEL_VAR) )
+      cpp('{}::{} {};'.format(CudaOptimisedKernelGenerator.NAMESPACE,
+                              kernelClass,
+                              self.KERNEL_VAR))
       for scalar in scalars:
-        cpp( '{0}.{1} = {1};'.format(self.KERNEL_VAR, scalar) )
-      for var in variables:
-        cpp( '{}.{}{} = {};'.format(self.KERNEL_VAR, var.tensor.baseName(), self._groupIndex(var), self._tensorName(var)) )
+        cpp( '{0}.{1} = {1};'.format(self.KERNEL_VAR, scalar))
 
-      cpp( '{}.{}();'.format(self.KERNEL_VAR, OptimisedKernelGenerator.EXECUTE_NAME + (str(index) if index is not None else '')) )
+
+      for var in variables:
+        cpp( '{0}.{1}{2} = {3};'.format(self.KERNEL_VAR,
+                                        var.tensor.baseName(),
+                                        self._groupIndex(var),
+                                        self._get_gpu_tensor_name(var)))
+
+      # execute a kernel
+      cpp( '{}.{}();'.format(self.KERNEL_VAR,
+                             CudaOptimisedKernelGenerator.EXECUTE_NAME + (str(index) if index is not None else '')))
       cpp.emptyline()
 
-      super().generate(cpp, cfg, factory, None, gemm_cfg)
+
+      # copy result of execution from GPU to CPU
+      # iterate through all variables in the control flow graph
+      for var in variables:
+        # consider only tensors which a writable
+        # i.e. modified during the kernel execution
+        if var.tensor:
+          if var.writable:
+            memory_layout = var.tensor.memoryLayout()
+            size = memory_layout.requiredReals()
+            size_in_bytes = "sizeof({0}) * {1}".format(self._arch.typename,
+                                                       size)
+
+            function_params = "{0}, {1}, {2}, {3}".format(self._tensorName(var),
+                                                          self._get_gpu_tensor_name(var),
+                                                          size_in_bytes,
+                                                          "cudaMemcpyDeviceToHost")
+
+            cpp('cudaMemcpy({}); CUDA_CHECK;'.format(function_params))
+          cpp('cudaFree({}); CUDA_CHECK;'.format(self._get_gpu_tensor_name(var)))
+
+
+      cpp.emptyline()
+
+
+      # use CPU kernek generator to generate a unit test
+      KernelGenerator(self._arch).generate(cpp, cfg, cpu_factory, None, gemm_cfg)
+
 
       for var in variables:
         if var.writable:
-          factory.compare(var, Variable(self._tensorName(var), False, var.tensor.memoryLayout()))
+          cpu_factory.compare(var, Variable(self._tensorName(var), False, var.tensor.memoryLayout()))
 
-      factory.freeTmp()
+      cpu_factory.freeTmp()
 
-class InitializerGenerator(object):
+
+class CudaInitializerGenerator(object):
   SHAPE_NAME = 'Shape'
   SIZE_NAME = 'Size'
   SIZE_FUN_NAME = 'size'
@@ -421,6 +614,7 @@ class InitializerGenerator(object):
       cpp(self.formatArray(numberType, namespace + self.START_NAME + index, [r.start for r in memLayout.bbox()], declarationOnly))
       cpp(self.formatArray(numberType, namespace + self.STOP_NAME + index, [r.stop for r in memLayout.bbox()], declarationOnly))
 
+
   class CSCMatrixView(TensorView):
     ROWIND_NAME = 'RowInd'
     COLPTR_NAME = 'ColPtr'
@@ -447,6 +641,7 @@ class InitializerGenerator(object):
     self._realType = '{} const'.format(self._arch.typename)
     self._realPtrType = self._realType + '*'
     self._collect = collections.OrderedDict()
+
     for tensor in tensors:
       baseName = tensor.baseName()
       group = tensor.group()
@@ -461,7 +656,8 @@ class InitializerGenerator(object):
         assert self._collect[baseName][group] == tensor
     maxIndex = {baseName: tuple(map(max, *groups.keys())) if len(groups) > 1 else next(iter(groups.keys())) for baseName, groups in self._collect.items()}
     self._groupSize = {baseName: tuple(map(lambda x: x+1, mi)) for baseName, mi in maxIndex.items()}
-  
+
+
   def _tensorViewGenerator(self, memoryLayout):
     memLayoutMap = {
       'DenseMemoryLayout': self.DenseTensorView,
@@ -471,21 +667,30 @@ class InitializerGenerator(object):
   
   def generateTensorsH(self, header):
     with header.Namespace(self.TENSOR_NAMESPACE):
-      for baseName,tensors in self._collect.items():        
+
+      header("// DEBUG: CUDA part")
+      header("extern {} num_elements_in_cluster;".format(self._arch.uintTypename))
+      header.emptyline()
+
+      for baseName, tensors in self._collect.items():
+
         with header.Struct(baseName):
           groupSize = self._groupSize[baseName]
           self._tensor(header, '', tensors, groupSize, False)
           args = ndargs(len(groupSize))
           typedArgs = typedNdArgs(len(groupSize), self._arch.uintTypename)
           returnType = '{} {}'.format(MODIFIERS, self._arch.uintTypename)
+
           if len(groupSize) > 0:
             with header.Function(self.INDEX_FUN_NAME, typedArgs, returnType):
               header('return {};'.format(indexFun(groupSizeToStride(groupSize))))
+
           with header.Function(self.SIZE_FUN_NAME, typedArgs, returnType):
             if len(groupSize) == 0:
               header('return {};'.format(self.SIZE_NAME))
             else:
               header('return {}[{}({})];'.format(self.SIZE_NAME, self.INDEX_FUN_NAME, ', '.join(args)))
+
           if len(groupSize) > 0:
             header('template<typename T>')
             with header.Struct(self.CONTAINER_CLASS_NAME):
@@ -496,24 +701,77 @@ class InitializerGenerator(object):
               with header.Function('operator()', typedArgs, '{} T const&'.format(INLINE), const=True):
                 header('return {}[{}({})];'.format(self.CONTAINER_DATA_NAME, self.INDEX_FUN_NAME, ', '.join(args)))
 
+
   def generateTensorsCpp(self, cpp):
-    for baseName,tensors in self._collect.items():
-      self._tensor(cpp, '::'.join([self.TENSOR_NAMESPACE, baseName, '']), tensors, self._groupSize[baseName], True)
-  
+    cpp("// DEBUG: CUDA part (where 1 is a default value)")
+    cpp("{} {}::num_elements_in_cluster = 1;".format(self._arch.uintTypename,
+                                                       self.TENSOR_NAMESPACE))
+    cpp.emptyline()
+
+
+    for baseName, tensors in self._collect.items():
+      self._tensor(cpp=cpp,
+                   name='::'.join([self.TENSOR_NAMESPACE, baseName, '']),
+                   tensors=tensors,
+                   groupSize=self._groupSize[baseName],
+                   declarationOnly=True)
+
+
   def generateInitH(self, header):
     with header.Namespace(self.INIT_NAMESPACE):
-      for baseName,tensors in self._collect.items():
-        self._init(header, baseName, '', tensors, False)
+      for baseName, tensors in self._collect.items():
+        self._init(cpp=header,
+                   baseName=baseName,
+                   name='',
+                   tensors=tensors,
+                   declarationOnly=False)
+
 
   def generateInitCpp(self, header):
-    for baseName,tensors in self._collect.items():
-      self._init(header, baseName, '::'.join([self.INIT_NAMESPACE, baseName, '']), tensors, True)
-  
+    for baseName, tensors in self._collect.items():
+      self._init(cpp=header,
+                 baseName=baseName,
+                 name='::'.join([self.INIT_NAMESPACE, baseName, '']),
+                 tensors=tensors,
+                 declarationOnly=True)
+
+
   def _tensor(self, cpp, name, tensors, groupSize, declarationOnly):
-    shape = {group: tensor.shape() for group,tensor in tensors.items()}
-    size = {group: [tensor.memoryLayout().requiredReals()] for group,tensor in tensors.items()}
-    self._array(cpp, self._numberType, name + self.SHAPE_NAME, shape, groupSize, declarationOnly)
-    self._array(cpp, self._numberType, name + self.SIZE_NAME, size, groupSize, declarationOnly, alwaysArray=False)
+    # specify tensor shape
+    shape = {group: tensor.shape() for group, tensor in tensors.items()}
+    self._array(cpp=cpp,
+                type=self._numberType,
+                name=name + self.SHAPE_NAME,
+                content=shape,
+                groupSize=groupSize,
+                declarationOnly=declarationOnly)
+
+
+    # specify tensor size
+    size = {group: [tensor.memoryLayout().requiredReals()] for group, tensor in tensors.items()}
+    self._array(cpp=cpp,
+                type=self._numberType,
+                name=name + self.SIZE_NAME,
+                content=size,
+                groupSize=groupSize,
+                declarationOnly=declarationOnly,
+                alwaysArray=False)
+
+    # specify jump to the next element
+    # The jump is equal to zero if tensor is 'constant' i.e. the same for all elements
+    # The jump is equal to a tensor size in case if a tensor is unique for each element
+    default_jump = 0
+    jump_to_next = {group: [default_jump] for group, tensor in tensors.items()}
+
+    self._array(cpp=cpp,
+                type=self._numberType,
+                name=name + "jump_to_next",
+                content=jump_to_next,
+                groupSize=groupSize,
+                declarationOnly=declarationOnly,
+                alwaysArray=False,
+                constexpr=False)
+
 
   def _init(self, cpp, baseName, name, tensors, declarationOnly):
     groupSize = self._groupSize[baseName]
@@ -582,8 +840,9 @@ class InitializerGenerator(object):
             cpp('typedef {} {};'.format(typename, self.VIEW_TYPE_NAME))
             with cpp.Function(self.VIEW_FUN_NAME, arguments=viewArgs, returnType='{} {}'.format(STATIC_INLINE, self.VIEW_TYPE_NAME)):
               tv.generate(cpp, ml, self._arch, index(group))
-  
-  def _array(self, cpp, typ, name, content, groupSize, declarationOnly=False, alwaysArray=True, constexpr=True, static=True):
+
+
+  def _array(self, cpp, type, name, content, groupSize, declarationOnly=False, alwaysArray=True, constexpr=True, static=True):
     cexpr = CONSTEXPR + ' ' if constexpr else ''
     stat = STATIC + ' ' if static else ''
     maxLen = max(map(len, content.values())) if len(content.values()) > 0 else 0
@@ -595,7 +854,7 @@ class InitializerGenerator(object):
     arrayIndices = '[{}]'.format(maxLen) if isArray else ''
     
     if declarationOnly:
-      cpp('{}{} {}{}{};'.format(cexpr, typ, name, groupIndices, arrayIndices))
+      cpp('{}{} {}{}{};'.format(cexpr, type, name, groupIndices, arrayIndices))
     else:
       formatArray = lambda L: ', '.join([str(x) for x in L])
       if isGroup:
@@ -614,4 +873,4 @@ class InitializerGenerator(object):
       if isGroup:
         initStr = '{{{}}}'.format(initStr)
       
-      cpp('{}{}{} {}{}{} = {};'.format(cexpr, stat, typ, name, groupIndices, arrayIndices, initStr))
+      cpp('{}{}{} {}{}{} = {};'.format(cexpr, stat, type, name, groupIndices, arrayIndices, initStr))

@@ -2,6 +2,12 @@
 
 from yateto import *
 
+def gemm_cfg(arch, variant):
+  if variant == 'onlyblas':
+    return GeneratorCollection([SeissolCudaBlas(arch)])
+  return GeneratorCollection([LIBXSMM(arch), MKL(arch)])
+
+
 def add(g):
   N = 8
   A = Tensor('A', (N, N))

@@ -118,8 +118,8 @@ class Cpp:
     for line in code.splitlines():
       self.out.write(indentSpace + line + '\n')
   
-  def emptyline(self):
-    self.out.write('\n')
+  def emptyline(self, num_lines=1):
+    self.out.write('\n'*num_lines)
       
   def If(self, argument):
     return Block(self, 'if ({})'.format(argument))

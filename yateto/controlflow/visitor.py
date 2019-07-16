@@ -1,14 +1,14 @@
 from ..ast.visitor import Visitor
 from .graph import *
 from ..memory import DenseMemoryLayout
-
+from typing import List
 
 class AST2ControlFlow(Visitor):
     TEMPORARY_RESULT = '_tmp'
 
     def __init__(self, simpleMemoryLayout=False):
-        self._tmp = 0
-        self._cfg = []  # list of ProgrammingPoints
+        self._tmp: int = 0
+        self._cfg: List[ProgramPoint] = []
         self._writable = set()
         self._simpleMemoryLayout = simpleMemoryLayout
 
@@ -53,7 +53,7 @@ class AST2ControlFlow(Visitor):
 
         return result
 
-    def visit_Assign(self, node):
+    def visit_Assign(self, node : Type[Node]):
         self._writable = self._writable | {node[0].name()}
         variables = [self.visit(child) for child in node]
 
@@ -115,14 +115,24 @@ class PrettyPrinter(object):
         self._printPPState = printPPState
 
     def visit(self, cfg):
-        for pp in cfg:
+        for programming_point in cfg:
+
             if self._printPPState:
-                if pp.live:
-                    print('L =', pp.live)
-                if pp.initBuffer:
-                    print('Init =', pp.initBuffer)
-            if pp.action:
-                actionRepr = str(pp.action.term)
-                if pp.action.scalar is not None:
-                    actionRepr = str(pp.action.scalar) + ' * ' + actionRepr
-                print('  {} {} {}'.format(pp.action.result, '+=' if pp.action.add else '=', actionRepr))
+                if programming_point.live:
+                    print('L =', programming_point.live)
+                if programming_point.initBuffer:
+                    print('Init =', programming_point.initBuffer)
+
+
+            if programming_point.action:
+                actionRepr = str(programming_point.action.term)
+
+                # adjust printing result of the term in case of scalar multiplication
+                if programming_point.action.scalar is not None:
+                    actionRepr = str(programming_point.action.scalar) + ' * ' + actionRepr
+
+                # print programming point on the screen
+                print('  {} {} {}'.format(programming_point.action.result,
+                                          '+=' if programming_point.action.add else '=',
+                                          actionRepr))
+

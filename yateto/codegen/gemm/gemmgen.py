@@ -2,7 +2,7 @@ import hashlib
 import subprocess
 import tempfile
 from ..cache import RoutineGenerator
-from ...gemm_configuration import BLASlike, CodeGenerator
+from ...gemm_configuration import BLASlike, SeissolCudaBlas, CodeGenerator
 
 class GemmGen(object):
   def __init__(self, arch, descr, gemm_cfg):
@@ -35,9 +35,9 @@ class GemmGen(object):
     ldB = 0 if d.isBCsc else d.rightTerm.memoryLayout.stridei(1)
     ldC = d.result.memoryLayout.stridei(1)
     
-    assert (d.transA and (k,m) in d.leftTerm.memoryLayout) or (not d.transA and (m,k) in d.leftTerm.memoryLayout)
-    assert (d.transB and (n,k) in d.rightTerm.memoryLayout) or (not d.transB and (k,n) in d.rightTerm.memoryLayout)
-    assert (m,n) in d.result.memoryLayout
+    assert (d.transA and (k, m) in d.leftTerm.memoryLayout) or (not d.transA and (m, k) in d.leftTerm.memoryLayout)
+    assert (d.transB and (n, k) in d.rightTerm.memoryLayout) or (not d.transB and (k, n) in d.rightTerm.memoryLayout)
+    assert (m, n) in d.result.memoryLayout
 
     spp = None
     sppRows = None
@@ -52,15 +52,23 @@ class GemmGen(object):
       flops = 2 * m.size() * len(spp)
     else:
       flops = 2 * m.size() * n.size() * k.size()
-    
+
+
+    cpp.emptyline()
     if isinstance(self._gemm_cfg, BLASlike):
-      cpp(  self._gemm_cfg.call(  d.transA, \
-                                  d.transB, \
-                                  m.size(), n.size(), k.size(), \
-                                  d.alpha, self._pointer(d.leftTerm, (m.start, k.start), d.transA), ldA, \
-                                  self._pointer(d.rightTerm, (k.start, n.start), d.transB), ldB, \
-                                  d.beta, self._pointer(d.result, (m.start, n.start), False), ldC
-                                ))
+      cpp(self._gemm_cfg.call(d.transA,
+                              d.transB,
+                              m.size(),
+                              n.size(),
+                              k.size(),
+                              d.alpha,
+                              self._pointer(d.leftTerm, (m.start, k.start), d.transA),
+                              ldA,
+                              self._pointer(d.rightTerm, (k.start, n.start), d.transB),
+                              ldB,
+                              d.beta,
+                              self._pointer(d.result, (m.start, n.start), False),
+                              ldC))
 
     else:
       assert not (d.transA or d.transB)

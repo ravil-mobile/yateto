@@ -86,7 +86,7 @@ with Cpp(os.path.join(outDir, 'performance.cpp')) as cpp:
     cpp('int _reps, _error;')
     if trashTheCache:
       cpp('double* _trash = new double[{}];'.format(trashSize))
-    cpp('Stopwatch _sw;');
+    cpp('Stopwatch _sw;')
     cpp('double _time, _nzflops, _flops;')
     cpp('printf("kernel,repetitions,time,numnzflop,numflop,nzgflops,gflops\\n");')
     for kernel in g.kernels():

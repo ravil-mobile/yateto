@@ -91,7 +91,7 @@ class Expression(object):
 class ProgramAction(object):
   def __init__(self,
                result: Variable,
-               term: Type[Node],
+               term: Variable,
                add: bool,
                scalar: Union[float, Scalar] = None):
     """TODO: Complete description.

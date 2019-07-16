@@ -1,15 +1,24 @@
 import sys
 from .visitor import Visitor, PrettyPrinter, ComputeSparsityPattern
-from .node import IndexedTensor, Op, Assign, Einsum, Add, Product, IndexSum, Contraction
+from .node import Node, IndexedTensor, Op, Assign, Einsum, Add, Product, IndexSum, Contraction
 from .indices import Indices
 from .log import LoG
 from . import opt
 from .cost import ShapeCostEstimator
 from .. import aspp
+from typing import Type
 
 # Similar as ast.NodeTransformer
 class Transformer(Visitor): 
-  def generic_visit(self, node):
+  def generic_visit(self, node: Type[Node]) -> Type[Node]:
+    """TODO: complete description
+
+    Args:
+      node:
+
+    Returns:
+
+    """
     newChildren = [self.visit(child) for child in node]
     node.setChildren(newChildren)
     return node
@@ -18,7 +27,7 @@ class DeduceIndices(Transformer):
   def __init__(self, targetIndices=None):
     self._targetIndices = targetIndices
   
-  def visit(self, node):
+  def visit(self, node: Type[Node]):
     if self._targetIndices:
       if isinstance(node, Einsum) or isinstance(node, Add):
         node.indices = self._targetIndices

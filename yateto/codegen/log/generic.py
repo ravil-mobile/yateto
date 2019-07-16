@@ -2,23 +2,64 @@ from ...ast.indices import Indices
 from ..common import *
 from .. import gemm
 
+import re
+
 class Generic(object):
   def __init__(self, arch, descr):
     self._arch = arch
     self._descr = descr
-  
+
+
   def _pointer(self, cpp, targetName, baseName, term, loopIndices, const=True):
     indices = term.indices & loopIndices
     addressStr = term.memoryLayout.addressString(term.indices, indices) if len(indices) > 0 else ''
     if len(addressStr) > 0:
       addressStr = ' + ' + addressStr
-    cpp('{} {}* {} = {}{};'.format(self._arch.typename, 'const' if const else '', targetName, baseName, addressStr))
+
+    cpp('{} {}* {} = {}{};'.format(self._arch.typename,
+                                   'const' if const else '',
+                                   targetName,
+                                   baseName,
+                                   addressStr))
+
+
+
+  def _generate_tensors_jumps(self,
+                              cpp,
+                              target_name_A,
+                              target_name_B,
+                              target_name_C,
+                              tensor_descriptions):
+
+    terms = {target_name_A: tensor_descriptions.leftTerm,
+             target_name_B: tensor_descriptions.rightTerm,
+             target_name_C: tensor_descriptions.result}
+
+    temp_variable_name = re.compile(r'_tmp*')
+    for name, term in terms.items():
+
+      tensor_volume = 1
+      indices_info = term.indices.size()
+      for index_name, index_size in indices_info.items():
+        tensor_volume *= index_size
+
+      base_jump_name = "jump_to_next_"
+      size = term.eqspp.size
+      if not temp_variable_name.match(term.name):
+        size = "tensor::{}::jump_to_next".format(term.name)
+
+      cpp("const {} {} = {};".format(self._arch.uintTypename,
+                                     base_jump_name + name,
+                                     size))
+    cpp.emptyline()
+
 
   def _alignedStart(self, term, loopIndices):
     if len(loopIndices) == 0:
       return True
     return term.memoryLayout.isAlignedAddressString(term.indices, term.indices & loopIndices)
-    
+
+
   def _memLayout(self, term, I, J):
     assert len(I) > 0
     if len(J) == 0:
@@ -28,96 +69,177 @@ class Generic(object):
       return term.memoryLayout
     return term.memoryLayout.unfold(term.indices, I, J)
 
+
   def _reduce(self, term, subset, memLayout):
     return reduceSpp(term.eqspp, term.indices, subset).reshape(memLayout.shape())
-  
+
+
   def _defuse(self, fusedRange, term, I):
     if len(I) == 1:
       return  {next(iter(I)): fusedRange}
     return term.memoryLayout.defuse(fusedRange, term.indices, I)
 
+
   def generate(self, cpp, routineCache, gemm_cfg):
-    d = self._descr
-    
-    A = d.leftTerm.indices - d.loopIndices
-    B = d.rightTerm.indices - d.loopIndices
-    C = d.result.indices - d.loopIndices
+    descr = self._descr
+
+
+    A = descr.leftTerm.indices - descr.loopIndices
+    B = descr.rightTerm.indices - descr.loopIndices
+    C = descr.result.indices - descr.loopIndices
     Im = set(A) & set(C)
     In = set(B) & set(C)
     Ik = set(A) & set(B)
-    
-    hasOuterLoops = len(d.outerLoopIndices) > 0
-    outerAname = '_A' if hasOuterLoops else d.leftTerm.name
-    outerBname = '_B' if hasOuterLoops else d.rightTerm.name
-    outerCname = '_C' if hasOuterLoops else d.result.name
-    outerPrefetchName = '_Cprefetch' if hasOuterLoops and d.prefetchName is not None else d.prefetchName
-    
-    hasInnerLoops = len(d.innerLoopIndices) > 0
+
+
+    hasOuterLoops = len(descr.outerLoopIndices) > 0
+    outerAname = '_A' if hasOuterLoops else descr.leftTerm.name
+    outerBname = '_B' if hasOuterLoops else descr.rightTerm.name
+    outerCname = '_C' if hasOuterLoops else descr.result.name
+    outerPrefetchName = '_Cprefetch' if hasOuterLoops and descr.prefetchName is not None else descr.prefetchName
+
+
+    hasInnerLoops = len(descr.innerLoopIndices) > 0
     innerAname = '_Ain' if hasInnerLoops else outerAname
     innerBname = '_Bin' if hasInnerLoops else outerBname
     innerCname = '_Cin' if hasInnerLoops else outerCname
     innerPrefetchName = '_Cprefetchin' if hasInnerLoops and outerPrefetchName is not None else outerPrefetchName
 
-    alignedStartA = not hasOuterLoops or self._alignedStart(d.leftTerm, d.outerLoopIndices)
-    
-    AmemLayout = self._memLayout(d.leftTerm, Im, Ik)
-    BmemLayout = self._memLayout(d.rightTerm, Ik, In)
-    CmemLayout = self._memLayout(d.result, Im, In)
+    alignedStartA = not hasOuterLoops or self._alignedStart(descr.leftTerm, descr.outerLoopIndices)
 
-    Aeqspp = self._reduce(d.leftTerm, A, AmemLayout)
-    Beqspp = self._reduce(d.rightTerm, B, BmemLayout)
-    Ceqspp = self._reduce(d.result, C, CmemLayout)
+    AmemLayout = self._memLayout(descr.leftTerm, Im, Ik)
+    BmemLayout = self._memLayout(descr.rightTerm, Ik, In)
+    CmemLayout = self._memLayout(descr.result, Im, In)
+
+    Aeqspp = self._reduce(descr.leftTerm, A, AmemLayout)
+    Beqspp = self._reduce(descr.rightTerm, B, BmemLayout)
+    Ceqspp = self._reduce(descr.result, C, CmemLayout)
 
     gemmDescr = gemm.Description(
-      leftTerm = TensorDescription(innerAname, AmemLayout, Aeqspp),
-      rightTerm = TensorDescription(innerBname, BmemLayout, Beqspp),
-      result = TensorDescription(innerCname, CmemLayout, Ceqspp),
-      transA = d.transA,
-      transB = d.transB,
-      alpha = d.alpha,
-      beta = 1.0 if d.add else 0.0,
-      arch = self._arch,
-      alignedStartA = self._alignedStart(d.leftTerm, d.outerLoopIndices) and self._alignedStart(d.leftTerm, d.innerLoopIndices),
-      alignedStartC = self._alignedStart(d.result, d.outerLoopIndices) and self._alignedStart(d.result, d.innerLoopIndices),
-      prefetchName = innerPrefetchName
+      leftTerm=TensorDescription(innerAname, AmemLayout, Aeqspp),
+      rightTerm=TensorDescription(innerBname, BmemLayout, Beqspp),
+      result=TensorDescription(innerCname, CmemLayout, Ceqspp),
+      transA=descr.transA,
+      transB=descr.transB,
+      alpha=descr.alpha,
+      beta = 1.0 if descr.add else 0.0,
+      arch=self._arch,
+      alignedStartA=self._alignedStart(descr.leftTerm, descr.outerLoopIndices) and self._alignedStart(descr.leftTerm, descr.innerLoopIndices),
+      alignedStartC=self._alignedStart(descr.result, descr.outerLoopIndices) and self._alignedStart(descr.result, descr.innerLoopIndices),
+      prefetchName=innerPrefetchName
     )
-    
-    if not d.add:
+
+    if not descr.add:
       lr = dict()
       m, n, k = gemmDescr.mnk()
-      lr.update(d.loopRanges)
-      lr.update( self._defuse(m, d.leftTerm, Im) )
-      lr.update( self._defuse(n, d.rightTerm, In) )
-      writeBB = boundingBoxFromLoopRanges(d.result.indices, lr)
-      initializeWithZero(cpp, self._arch, d.result, writeBB)
-    
+      lr.update(descr.loopRanges)
+      lr.update(self._defuse(m, descr.leftTerm, Im))
+      lr.update(self._defuse(n, descr.rightTerm, In))
+      writeBB = boundingBoxFromLoopRanges(descr.result.indices, lr)
+      initializeWithZero(cpp, self._arch, descr.result, writeBB)
+
+
     class LoGBody(object):
       def __call__(s):
         if hasInnerLoops:
-          self._pointer(cpp, innerAname, outerAname, d.leftTerm, d.innerLoopIndices)
-          self._pointer(cpp, innerBname, outerBname, d.rightTerm, d.innerLoopIndices)
-          self._pointer(cpp, innerCname, outerCname, d.result, d.innerLoopIndices, const=False)
+
+          self._pointer(cpp=cpp,
+                        targetName=innerAname,
+                        baseName=outerAname,
+                        term=descr.leftTerm,
+                        loopIndices=descr.innerLoopIndices)
+
+          self._pointer(cpp=cpp,
+                        targetName=innerBname,
+                        baseName=outerBname,
+                        term=descr.rightTerm,
+                        loopIndices=descr.innerLoopIndices)
+
+          self._pointer(cpp=cpp,
+                        targetName=innerCname,
+                        baseName=outerCname,
+                        term=descr.result,
+                        loopIndices=descr.innerLoopIndices,
+                        const=False)
+
           if outerPrefetchName is not None:
-            self._pointer(cpp, innerPrefetchName, outerPrefetchName, d.result, d.innerLoopIndices)
+            self._pointer(cpp=cpp,
+                          targetName=innerPrefetchName,
+                          baseName=outerPrefetchName,
+                          term=descr.result,
+                          loopIndices=descr.innerLoopIndices)
+
+
+        self._generate_tensors_jumps(cpp=cpp,
+                                     target_name_A=innerAname,
+                                     target_name_B=innerBname,
+                                     target_name_C=innerCname,
+                                     tensor_descriptions=descr)
+
+
         generator = gemm.generator(self._arch, gemmDescr, gemm_cfg)
         return generator.generate(cpp, routineCache)
+
 
     class InnerLoopBody(object):
       def __call__(s):
         flops = 0
         if hasOuterLoops:
-          self._pointer(cpp, outerAname, d.leftTerm.name, d.leftTerm, d.outerLoopIndices)
-          self._pointer(cpp, outerBname, d.rightTerm.name, d.rightTerm, d.outerLoopIndices)
-          self._pointer(cpp, outerCname, d.result.name, d.result, d.outerLoopIndices, const=False)
-          if d.prefetchName is not None:
-            self._pointer(cpp, outerPrefetchName, d.prefetchName, d.result, d.outerLoopIndices)
-        if d.assignLoopRanges is not None:
+          self._pointer(cpp=cpp,
+                        targetName=outerAname,
+                        baseName=descr.leftTerm.name,
+                        term=descr.leftTerm,
+                        loopIndices=descr.outerLoopIndices)
+
+          self._pointer(cpp=cpp,
+                        targetName=outerBname,
+                        baseName=descr.rightTerm.name,
+                        term=descr.rightTerm,
+                        loopIndices=descr.outerLoopIndices)
+
+          self._pointer(cpp=cpp,
+                        targetName=outerCname,
+                        baseName=descr.result.name,
+                        term=descr.result,
+                        loopIndices=descr.outerLoopIndices,
+                        const=False)
+
+          if descr.prefetchName is not None:
+            self._pointer(cpp=cpp,
+                          targetName=outerPrefetchName,
+                          baseName=descr.prefetchName,
+                          term=descr.result,
+                          loopIndices=descr.outerLoopIndices)
+
+        """
+        self._generate_tensors_jumps(cpp=cpp,
+                                    target_name_A=outerAname,
+                                    target_name_B=outerBname,
+                                    target_name_C=outerCname,
+                                    tensor_descriptions=descr)
+
+        """
+        if descr.assignLoopRanges is not None:
           gemmDescr.setBeta(0.0)
-          flops += forLoops(cpp, d.innerLoopIndices, d.assignLoopRanges, LoGBody(), pragmaSimd=False)
-        if d.addLoopRanges is not None:
+          flops += forLoops(cpp=cpp,
+                            indexNames=descr.innerLoopIndices,
+                            ranges=descr.assignLoopRanges,
+                            body=LoGBody(),
+                            pragmaSimd=False)
+
+        if descr.addLoopRanges is not None:
           gemmDescr.setBeta(1.0)
-          flops += forLoops(cpp, d.innerLoopIndices, d.addLoopRanges, LoGBody(), pragmaSimd=False)
+          flops += forLoops(cpp=cpp,
+                            indexNames=descr.innerLoopIndices,
+                            ranges=descr.addLoopRanges,
+                            body=LoGBody(),
+                            pragmaSimd=False)
+
         return flops
 
-    return forLoops(cpp, d.outerLoopIndices, d.loopRanges, InnerLoopBody(), pragmaSimd=False)
+    return forLoops(cpp=cpp,
+                    indexNames=descr.outerLoopIndices,
+                    ranges=descr.loopRanges,
+                    body=InnerLoopBody(),
+                    pragmaSimd=False)
 

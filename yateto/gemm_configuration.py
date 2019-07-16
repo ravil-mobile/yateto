@@ -2,12 +2,14 @@ from typing import List
 from abc import ABC, abstractmethod
 import operator
 
+
 class Preference(object):
   HIGHEST = 4
   HIGH = 3
   MODERATE = 2
   LOW = 1
   LOWEST = 0
+
 
 class GemmTool(ABC):
   def __init__(self, operation_name: str, includes: List[str] = []):
@@ -21,6 +23,7 @@ class GemmTool(ABC):
   @abstractmethod
   def supported(self, m, n, k, sparseA, sparseB, transA, transB, alpha, beta):
     pass
+
 
 class BLASlike(GemmTool):
   def __init__(self, operation_name: str, includes: List[str], c_code_init: str = ''):
@@ -47,13 +50,16 @@ class BLASlike(GemmTool):
       beta, C, ldC]
     return '{}({});'.format(self.operation_name, ', '.join(str(p) for p in parameters))
 
+
 class MKL(BLASlike):
   def __init__(self, arch):
     super().__init__('cblas_{}gemm'.format(arch.precision.lower()), ['mkl_cblas.h'])
 
+
 class OpenBLAS(BLASlike):
   def __init__(self, arch):
     super().__init__('cblas_{}gemm'.format(arch.precision.lower()), ['cblas.h'])
+
 
 class BLIS(BLASlike):
   def __init__(self, arch):
@@ -73,6 +79,30 @@ class BLIS(BLASlike):
       'const_cast<{}*>({})'.format(self._typename, B), 1, ldB,
       '&_blas_beta', C, 1, ldC]
     return '{} {}({});'.format(init, self.operation_name, ', '.join(str(p) for p in parameters))
+
+
+class SeissolCudaBlas(BLASlike):
+  def __init__(self, arch):
+    super().__init__(operation_name='cuda_blas_gemm'.format(arch.precision.lower()),
+                     includes=['cuda_utils.cuh'])
+
+  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC):
+    parameters = [
+      'CblasColMajor',
+      self.bool2Trans(transA),
+      self.bool2Trans(transB),
+      M, N, K,
+      alpha, A, ldA,
+      B, ldB,
+      beta, C, ldC,
+      "jump_to_next_{}".format(A),
+      "jump_to_next_{}".format(B),
+      "jump_to_next_{}".format(C),
+      "tensor::num_elements_in_cluster"]
+    print("we've found an entry point")
+    return '{}({});'.format(self.operation_name, ', '.join(str(p) for p in parameters))
+
+
 
 class CodeGenerator(GemmTool):
   def __init__(self, operation_name: str, includes: List[str], cmd: str, arch):
