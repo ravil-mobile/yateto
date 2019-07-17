@@ -12,3 +12,4 @@ examples/rav-minimal.py
 
 examples/minimal-gpu
 examples/matmul-gpu
+examples/ader

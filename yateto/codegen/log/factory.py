@@ -4,9 +4,18 @@ from .generic import Generic
 
 
 class Description(object):
-  def __init__(self, alpha, add: bool, result: IndexedTensorDescription,
-               leftTerm: IndexedTensorDescription, rightTerm: IndexedTensorDescription, loopIndices,
-               transA, transB, prefetchName):
+  def __init__(self,
+               alpha,
+               add: bool,
+               result: IndexedTensorDescription,
+               leftTerm: IndexedTensorDescription,
+               rightTerm: IndexedTensorDescription,
+               loopIndices,
+               transA,
+               transB,
+               prefetchName,
+               is_cuda_factory_used=False):
+
     self.alpha = alpha
     self.add = add
     self.result = result
@@ -16,6 +25,7 @@ class Description(object):
     self.transA = transA
     self.transB = transB
     self.prefetchName = prefetchName
+    self.is_cuda_factory_used = is_cuda_factory_used
 
     rA = loopRanges(self.leftTerm, self.loopIndices)
     rB = loopRanges(self.rightTerm, self.loopIndices)

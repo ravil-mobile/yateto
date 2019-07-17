@@ -169,12 +169,12 @@ class Generic(object):
                           term=descr.result,
                           loopIndices=descr.innerLoopIndices)
 
-
-        self._generate_tensors_jumps(cpp=cpp,
-                                     target_name_A=innerAname,
-                                     target_name_B=innerBname,
-                                     target_name_C=innerCname,
-                                     tensor_descriptions=descr)
+        if descr.is_cuda_factory_used:
+          self._generate_tensors_jumps(cpp=cpp,
+                                       target_name_A=innerAname,
+                                       target_name_B=innerBname,
+                                       target_name_C=innerCname,
+                                       tensor_descriptions=descr)
 
 
         generator = gemm.generator(self._arch, gemmDescr, gemm_cfg)

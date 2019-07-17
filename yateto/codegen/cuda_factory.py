@@ -129,6 +129,10 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
       transB=node.transB(),
       prefetchName=prefetchName
     )
+
+    print("debug")
+    print(isinstance(self, CudaKernelFactory))
+
     generator = log.generator(self._arch, description)
     return generator.generate(self._cpp, routineCache, gemm_cfg)
   

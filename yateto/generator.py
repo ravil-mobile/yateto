@@ -10,8 +10,7 @@ from .ast.transformer import *
 from .codegen.cache import *
 from .codegen.code import Cpp
 
-#from .codegen.visitor import *
-from .codegen.cuda_visitor import *
+from .codegen.visitor import *
 
 from .controlflow.visitor import AST2ControlFlow
 from .controlflow.transformer import *
@@ -375,7 +374,8 @@ class Generator(object):
         tensors.update(FindTensors().visit(kernel.ast))
 
     print('Generating initialization code...')
-    initGen = CudaInitializerGenerator(self._arch, sorted(tensors.values(), key=lambda x: x.name()))
+    #initGen = CudaInitializerGenerator(self._arch, sorted(tensors.values(), key=lambda x: x.name()))
+    initGen = InitializerGenerator(self._arch, sorted(tensors.values(), key=lambda x: x.name()))
     with Cpp(fTensors.h) as header:
       with header.HeaderGuard(self._headerGuardName(namespace, self.TENSORS_FILE_NAME)):
         with header.Namespace(namespace):
@@ -402,10 +402,12 @@ class Generator(object):
         initGen.generateInitCpp(cpp)
 
 
-
 ####################################################################################################
 #                                           CUDA
 ####################################################################################################
+from .codegen.cuda_visitor import CudaKernelGenerator, CudaOptimisedKernelGenerator
+from .codegen.cuda_visitor import CudaUnitTestGenerator, CudaInitializerGenerator
+
 class CudaGenerator(object):
   INIT_FILE_NAME = 'init'
   TENSORS_FILE_NAME = 'tensor'
