@@ -292,8 +292,8 @@ def parseJSONMatrixFile(json_file,
   return __createCollection(matrices)
 
 
-def memoryLayoutFromFile(xmlFile, db, clones):
-  tree = etree.parse(xmlFile)
+def memoryLayoutFromFile(xml_file, db, clones):
+  tree = etree.parse(xml_file)
   root = tree.getroot()
   strtobool = ['yes', 'true', '1']
   groups = dict()

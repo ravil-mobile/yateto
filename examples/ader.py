@@ -14,6 +14,18 @@ class OptionalDimTensor(Tensor):
                spp=None,
                memoryLayoutClass=DenseMemoryLayout,
                alignStride=False):
+    """
+
+    Args:
+      name (str): a tensor name
+      optName (str): TODO
+      optSize (int): number of simulations stacked together
+      optPos (int): TODO
+      shape (Tuple[int]): base tensor shape i.e. a shape for one simulation
+      spp (): TODO
+      memoryLayoutClass ():
+      alignStride (bool): TODO
+    """
 
     self._optName = optName
     self._optSize = optSize
@@ -64,6 +76,11 @@ class ADERDGBase(ABC):
 
     transpose = multipleSimulations > 1
     self.transpose = lambda name: transpose
+
+    # define a helper function which allows to flip indices of a tensor
+    # if "transpose" is True e.g.
+    # >>> self.t('abc')
+    # 'cba'
     self.t = (lambda x: x[::-1]) if transpose else (lambda x: x)
 
     # read matrices from a file and add it to a collection i.e. db - database
@@ -159,19 +176,25 @@ class ADERDGBase(ABC):
   def addInit(self, generator):
     fluxScale = Scalar('fluxScale')
     computeFluxSolverLocal = self.AplusT['ij'] <= fluxScale * self.Tinv['ki'] * self.QgodLocal['kq'] * self.db.star[0]['ql'] * self.T['jl']
-    generator.add('computeFluxSolverLocal', computeFluxSolverLocal)
+    generator.add(name='computeFluxSolverLocal', ast=computeFluxSolverLocal)
 
     computeFluxSolverNeighbor = self.AminusT['ij'] <= fluxScale * self.Tinv['ki'] * self.QgodNeighbor['kq'] * self.db.star[0]['ql'] * self.T['jl']
-    generator.add('computeFluxSolverNeighbor', computeFluxSolverNeighbor)
+    generator.add(name='computeFluxSolverNeighbor', ast=computeFluxSolverNeighbor)
 
-    QFortran = Tensor('QFortran', (self.numberOf3DBasisFunctions(), self.numberOfQuantities()))
-    multSimToFirstSim = Tensor('multSimToFirstSim', (self.Q.optSize(),), spp={(0,): '1.0'})
+    QFortran = Tensor(name='QFortran',
+                      shape=(self.numberOf3DBasisFunctions(), self.numberOfQuantities()))
+
+    multSimToFirstSim = Tensor(name='multSimToFirstSim',
+                               shape=(self.Q.optSize(),),
+                               spp={(0,): '1.0'})
+
     if self.Q.hasOptDim():
       copyQToQFortran = QFortran['kp'] <= self.Q['kp'] * multSimToFirstSim['s']
     else:
       copyQToQFortran = QFortran['kp'] <= self.Q['kp']
 
-    generator.add('copyQToQFortran', copyQToQFortran)
+    generator.add(name='copyQToQFortran', ast=copyQToQFortran)
+
 
   @abstractmethod
   def addLocal(self, generator):
@@ -200,8 +223,12 @@ class ADERDG(ADERDGBase):
     clones = {
       'star': ['star(0)', 'star(1)', 'star(2)'],
     }
-    self.db.update( parseXMLMatrixFile('{}/star.xml'.format(matricesDir), clones) )
-    memoryLayoutFromFile(memLayout, self.db, clones)
+
+    path_to_file = '{}/star.xml'.format(matricesDir)
+    self.db.update(parseXMLMatrixFile(xml_file=path_to_file, clones=clones))
+
+    # NOTE: this line has no effect on dense matrix layout
+    memoryLayoutFromFile(xml_file=memLayout, db=self.db, clones=clones)
 
   def numberOfQuantities(self):
     return 9
@@ -215,48 +242,105 @@ class ADERDG(ADERDGBase):
   def starMatrix(self, dim):
     return self.db.star[dim]
 
+
   def addInit(self, generator):
     super().addInit(generator)
 
     iniShape = (self.numberOf3DQuadraturePoints(), self.numberOfQuantities())
-    iniCond = OptionalDimTensor('iniCond', self.Q.optName(), self.Q.optSize(), self.Q.optPos(), iniShape, alignStride=True)
-    dofsQP = OptionalDimTensor('dofsQP', self.Q.optName(), self.Q.optSize(), self.Q.optPos(), iniShape, alignStride=True)
 
-    generator.add('projectIniCond', self.Q['kp'] <= self.db.projectQP[self.t('kl')] * iniCond['lp'])
-    generator.add('evalAtQP', dofsQP['kp'] <= self.db.evalAtQP[self.t('kl')] * self.Q['lp'])
+    iniCond = OptionalDimTensor(name='iniCond',
+                                optName=self.Q.optName(),
+                                optSize=self.Q.optSize(),
+                                optPos=self.Q.optPos(),
+                                shape=iniShape,
+                                alignStride=True)
+
+    dofsQP = OptionalDimTensor(name='dofsQP',
+                               optName=self.Q.optName(),
+                               optSize=self.Q.optSize(),
+                               optPos=self.Q.optPos(),
+                               shape=iniShape,
+                               alignStride=True)
+
+
+    generator.add(name='projectIniCond',
+                  ast=self.Q['kp'] <= self.db.projectQP[self.t('kl')] * iniCond['lp'])
+
+    generator.add(name='evalAtQP',
+                  ast=dofsQP['kp'] <= self.db.evalAtQP[self.t('kl')] * self.Q['lp'])
+
 
   def addLocal(self, generator):
     volumeSum = self.Q['kp']
+
     for i in range(3):
       volumeSum += self.db.kDivM[i][self.t('kl')] * self.I['lq'] * self.db.star[i]['qp']
+
     volume = (self.Q['kp'] <= volumeSum)
-    generator.add('volume', volume)
+    generator.add(name='volume', ast=volume)
 
     localFlux = lambda i: self.Q['kp'] <= self.Q['kp'] + self.db.rDivM[i][self.t('km')] * self.db.fMrT[i][self.t('ml')] * self.I['lq'] * self.AplusT['qp']
     localFluxPrefetch = lambda i: self.I if i == 0 else (self.Q if i == 1 else None)
-    generator.addFamily('localFlux', simpleParameterSpace(4), localFlux, localFluxPrefetch)
+
+    generator.addFamily(name='localFlux',
+                        parameterSpace=simpleParameterSpace(4),
+                        astGenerator=localFlux,
+                        prefetchGenerator=localFluxPrefetch)
+
 
   def addNeighbor(self, generator):
     neighbourFlux = lambda h,j,i: self.Q['kp'] <= self.Q['kp'] + self.db.rDivM[i][self.t('km')] * self.db.fP[h][self.t('mn')] * self.db.rT[j][self.t('nl')] * self.I['lq'] * self.AminusT['qp']
     neighbourFluxPrefetch = lambda h,j,i: self.I
-    generator.addFamily('neighboringFlux', simpleParameterSpace(3,4,4), neighbourFlux, neighbourFluxPrefetch)
+
+    generator.addFamily(name='neighboringFlux',
+                        parameterSpace=simpleParameterSpace(3,4,4),
+                        astGenerator=neighbourFlux,
+                        prefetchGenerator=neighbourFluxPrefetch)
+
 
   def addTime(self, generator):
     qShape = (self.numberOf3DBasisFunctions(), self.numberOfQuantities())
-    dQ0 = OptionalDimTensor('dQ(0)', self.Q.optName(), self.Q.optSize(), self.Q.optPos(), qShape, alignStride=True)
+    dQ0 = OptionalDimTensor(name='dQ(0)',
+                            optName=self.Q.optName(),
+                            optSize=self.Q.optSize(),
+                            optPos=self.Q.optPos(),
+                            shape=qShape,
+                            alignStride=True)
+
     power = Scalar('power')
     derivatives = [dQ0]
-    generator.add('derivativeTaylorExpansion(0)', self.I['kp'] <= power * dQ0['kp'])
-    for i in range(1,self.order):
+
+    generator.add(name='derivativeTaylorExpansion(0)',
+                  ast=self.I['kp'] <= power * dQ0['kp'])
+
+    for i in range(1, self.order):
       derivativeSum = Add()
+
+
       for j in range(3):
         derivativeSum += self.db.kDivMT[j][self.t('kl')] * derivatives[-1]['lq'] * self.db.star[j]['qp']
-      derivativeSum = DeduceIndices( self.Q['kp'].indices ).visit(derivativeSum)
+
+
+      derivativeSum = DeduceIndices(targetIndices=self.Q['kp'].indices).visit(derivativeSum)
       derivativeSum = EquivalentSparsityPattern().visit(derivativeSum)
-      dQ = OptionalDimTensor('dQ({})'.format(i), self.Q.optName(), self.Q.optSize(), self.Q.optPos(), qShape, spp=derivativeSum.eqspp(), alignStride=True)
-      generator.add('derivative({})'.format(i), dQ['kp'] <= derivativeSum)
-      generator.add('derivativeTaylorExpansion({})'.format(i), self.I['kp'] <= self.I['kp'] + power * dQ['kp'])
+
+      dQ = OptionalDimTensor(name='dQ({})'.format(i),
+                             optName=self.Q.optName(),
+                             optSize=self.Q.optSize(),
+                             optPos=self.Q.optPos(),
+                             shape=qShape,
+                             spp=derivativeSum.eqspp(),
+                             alignStride=True)
+
+
+      generator.add(name='derivative({})'.format(i),
+                    ast=dQ['kp'] <= derivativeSum)
+
+      generator.add(name='derivativeTaylorExpansion({})'.format(i),
+                    ast=self.I['kp'] <= self.I['kp'] + power * dQ['kp'])
+
       derivatives.append(dQ)
+
 
 
 ####################################################################################################
