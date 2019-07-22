@@ -66,7 +66,7 @@ example.add(generator)
 
 
 # decide which GEMM generator to use i.e. either provided by the user of the default one
-gemm_cfg = example.gemm_cfg(arch, cmdLineArgs.variant) if hasattr(example, 'gemm_cfg') else None
+gemm_cfg = example.gemm_cfg(arch, variant='cuda') if hasattr(example, 'gemm_cfg') else None
 
 
 # generate kernel i.e. translate from yateto to cpp

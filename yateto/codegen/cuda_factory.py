@@ -127,7 +127,8 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
       loopIndices=node.loopIndices(),
       transA=node.transA(),
       transB=node.transB(),
-      prefetchName=prefetchName
+      prefetchName=prefetchName,
+      is_cuda_factory_used=isinstance(self, CudaKernelFactory)
     )
 
     print("debug")

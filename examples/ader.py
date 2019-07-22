@@ -5,30 +5,45 @@ from yateto.memory import DenseMemoryLayout
 ####################################################################################################
 class OptionalDimTensor(Tensor):
   # dimSize = 1 is considered optional
-  def __init__(self, name, optName, optSize, optPos, shape, spp=None, memoryLayoutClass=DenseMemoryLayout, alignStride=False):
+  def __init__(self,
+               name,
+               optName,
+               optSize,
+               optPos,
+               shape,
+               spp=None,
+               memoryLayoutClass=DenseMemoryLayout,
+               alignStride=False):
+
     self._optName = optName
     self._optSize = optSize
     self._optPos = optPos
     shape = self.insertOptDim(shape, (self._optSize,))
     super().__init__(name, shape, spp, memoryLayoutClass, alignStride)
 
+
   def hasOptDim(self):
     return self._optSize > 1
+
 
   def insertOptDim(self, sliceable, item):
     if self.hasOptDim():
       return sliceable[0:self._optPos] + item + sliceable[self._optPos:]
     return sliceable
 
+
   def __getitem__(self, indexNames):
     indexNames = self.insertOptDim(indexNames, self._optName)
     return IndexedTensor(self, indexNames)
 
+
   def optName(self):
     return self._optName
 
+
   def optSize(self):
     return self._optSize
+
 
   def optPos(self):
     return self._optPos
@@ -43,54 +58,98 @@ class ADERDGBase(ABC):
     self.order = order
 
     self.alignStride = lambda name: True
+
     if multipleSimulations > 1:
       self.alignStride = lambda name: name.startswith('fP')
+
     transpose = multipleSimulations > 1
     self.transpose = lambda name: transpose
     self.t = (lambda x: x[::-1]) if transpose else (lambda x: x)
 
-    self.db = parseXMLMatrixFile('{}/matrices_{}.xml'.format(matricesDir, self.numberOf3DBasisFunctions()), transpose=self.transpose, alignStride=self.alignStride)
-    clonesQP = {
-      'v': [ 'evalAtQP' ],
-      'vInv': [ 'projectQP' ]
-    }
-    self.db.update( parseXMLMatrixFile('{}/plasticity_ip_matrices_{}.xml'.format(matricesDir, order), clonesQP, transpose=self.transpose, alignStride=self.alignStride))
+    # read matrices from a file and add it to a collection i.e. db - database
+    path_to_file = '{}/matrices_{}.xml'.format(matricesDir, self.numberOf3DBasisFunctions())
+    self.db = parseXMLMatrixFile(xml_file=path_to_file,
+                                 transpose=self.transpose,
+                                 align_stride=self.alignStride)
+
+
+
+    path_to_file = '{}/plasticity_ip_matrices_{}.xml'.format(matricesDir, order)
+
+    # matrices that have to be renamed i.e. a key is a name of matrix in the file, a value is
+    # a target matrix(tensor) name.
+    # NOTE if a list (value) contains more than one entry, yateto will generate tensors
+    # with the same content and structure but with different names according to the names
+    # specified in the list
+    clonesQP = {'v': ['evalAtQP'], 'vInv': ['projectQP']}
+
+    # read matrices from a file and augment the collection i.e. db - database
+    self.db.update(parseXMLMatrixFile(xml_file=path_to_file,
+                                      clones=clonesQP,
+                                      transpose=self.transpose,
+                                      align_stride=self.alignStride))
+
 
     qShape = (self.numberOf3DBasisFunctions(), self.numberOfQuantities())
-    self.Q = OptionalDimTensor('Q', 's', multipleSimulations, 0, qShape, alignStride=True)
-    self.I = OptionalDimTensor('I', 's', multipleSimulations, 0, qShape, alignStride=True)
+    self.Q = OptionalDimTensor(name='Q',
+                               optName='s',
+                               optSize=multipleSimulations,
+                               optPos=0,
+                               shape=qShape,
+                               alignStride=True)
+
+    self.I = OptionalDimTensor(name='I',
+                               optName='s',
+                               optSize=multipleSimulations,
+                               optPos=0,
+                               shape=qShape,
+                               alignStride=True)
+
 
     Ashape = (self.numberOfQuantities(), self.numberOfExtendedQuantities())
-    self.AplusT = Tensor('AplusT', Ashape)
-    self.AminusT = Tensor('AminusT', Ashape)
-    Tshape = (self.numberOfExtendedQuantities(), self.numberOfExtendedQuantities())
-    self.T = Tensor('T', Tshape)
-    QgodShape = (self.numberOfQuantities(), self.numberOfQuantities())
-    self.Tinv = Tensor('Tinv', QgodShape)
-    self.QgodLocal = Tensor('QgodLocal', QgodShape)
-    self.QgodNeighbor = Tensor('QgodNeighbor', QgodShape)
+    self.AplusT = Tensor(name='AplusT', shape=Ashape)
+    self.AminusT = Tensor(name='AminusT', shape=Ashape)
 
-    self.oneSimToMultSim = Tensor('oneSimToMultSim', (self.Q.optSize(),), spp={(i,): '1.0' for i in range(self.Q.optSize())})
+
+    Tshape = (self.numberOfExtendedQuantities(), self.numberOfExtendedQuantities())
+    self.T = Tensor(name='T', shape=Tshape)
+
+
+    QgodShape = (self.numberOfQuantities(), self.numberOfQuantities())
+    self.Tinv = Tensor(name='Tinv', shape=QgodShape)
+    self.QgodLocal = Tensor(name='QgodLocal', shape=QgodShape)
+    self.QgodNeighbor = Tensor(name='QgodNeighbor', shape=QgodShape)
+
+    self.oneSimToMultSim = Tensor(name='oneSimToMultSim',
+                                  shape=(self.Q.optSize(),),
+                                  spp={(i,): '1.0' for i in range(self.Q.optSize())})
+
 
   def numberOf2DBasisFunctions(self):
-    return self.order*(self.order+1)//2
+    return self.order * (self.order + 1) // 2
+
 
   def numberOf3DBasisFunctions(self):
-    return self.order*(self.order+1)*(self.order+2)//6
+    return self.order * (self.order + 1) * (self.order + 2) // 6
+
 
   def numberOf3DQuadraturePoints(self):
-    return (self.order+1)**3
+    return (self.order + 1)**3
+
 
   @abstractmethod
   def numberOfQuantities(self):
     pass
 
+
   @abstractmethod
   def numberOfExtendedQuantities(self):
     pass
 
+
   @abstractmethod
   def extendedQTensor(self):
+
     pass
 
   @abstractmethod
