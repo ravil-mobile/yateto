@@ -19,9 +19,9 @@ class OptionalDimTensor(Tensor):
     Args:
       name (str): a tensor name
       optName (str): TODO
-      optSize (int): number of simulations stacked together
+      optSize (int): a number of simulations stacked together
       optPos (int): TODO
-      shape (Tuple[int]): base tensor shape i.e. a shape for one simulation
+      shape (Tuple[int]): a base tensor shape i.e. a shape of one simulation
       spp (): TODO
       memoryLayoutClass ():
       alignStride (bool): TODO
