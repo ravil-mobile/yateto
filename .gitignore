@@ -14,3 +14,4 @@ examples/minimal-gpu
 examples/matmul-gpu
 examples/ader
 examples/ader-gpu
+examples/parse-*

@@ -4,6 +4,15 @@ from yateto.memory import DenseMemoryLayout
 
 ####################################################################################################
 class OptionalDimTensor(Tensor):
+  """The class represents an extension of class Tensor to support multi-simulations behaviour of
+  a program.
+
+  An instance of a class takes a base tensor shape (a shape of a tensor for one simulation)
+  as well as an optional index name, size and position. The optional position shows where to
+  insert the additional index within the base tensor indices. Size and name specify the size and
+  name of the extra dimensions, respectively.
+  """
+
   # dimSize = 1 is considered optional
   def __init__(self,
                name,
@@ -15,12 +24,11 @@ class OptionalDimTensor(Tensor):
                memoryLayoutClass=DenseMemoryLayout,
                alignStride=False):
     """
-
     Args:
       name (str): a tensor name
-      optName (str): TODO
+      optName (str): a name of additional index which represents multiple simulations
       optSize (int): a number of simulations stacked together
-      optPos (int): TODO
+      optPos (int): a position of the optional index within the base tensor shape
       shape (Tuple[int]): a base tensor shape i.e. a shape of one simulation
       spp (): TODO
       memoryLayoutClass ():
@@ -30,7 +38,11 @@ class OptionalDimTensor(Tensor):
     self._optName = optName
     self._optSize = optSize
     self._optPos = optPos
-    shape = self.insertOptDim(shape, (self._optSize,))
+
+    # insert the additional index to the base tensor shape if it is needed
+    shape = self.insertOptDim(sliceable=shape, item=(self._optSize,))
+
+    # init an instance of the tensor class
     super().__init__(name, shape, spp, memoryLayoutClass, alignStride)
 
 
@@ -289,11 +301,11 @@ class ADERDG(ADERDGBase):
 
 
   def addNeighbor(self, generator):
-    neighbourFlux = lambda h,j,i: self.Q['kp'] <= self.Q['kp'] + self.db.rDivM[i][self.t('km')] * self.db.fP[h][self.t('mn')] * self.db.rT[j][self.t('nl')] * self.I['lq'] * self.AminusT['qp']
-    neighbourFluxPrefetch = lambda h,j,i: self.I
+    neighbourFlux = lambda h, j, i: self.Q['kp'] <= self.Q['kp'] + self.db.rDivM[i][self.t('km')] * self.db.fP[h][self.t('mn')] * self.db.rT[j][self.t('nl')] * self.I['lq'] * self.AminusT['qp']
+    neighbourFluxPrefetch = lambda h, j, i: self.I
 
     generator.addFamily(name='neighboringFlux',
-                        parameterSpace=simpleParameterSpace(3,4,4),
+                        parameterSpace=simpleParameterSpace(3, 4, 4),
                         astGenerator=neighbourFlux,
                         prefetchGenerator=neighbourFluxPrefetch)
 
@@ -345,8 +357,17 @@ class ADERDG(ADERDGBase):
 
 ####################################################################################################
 from yateto.gemm_configuration import GeneratorCollection, SeissolCudaBlas, MKL
-
 def gemm_cfg(arch, variant=None):
+  """Creates a set of generators which are going to be used for source code generation
+
+  Args:
+    arch (Architecture): an instance of Architecture class which holds basic information
+                         about a target compute architecture
+    variant (str): a switch which allows the user to choose a target source code generators
+
+  Returns:
+    GeneratorCollection: a set of source code generators
+  """
 
   if variant == 'cuda':
     return GeneratorCollection([SeissolCudaBlas(arch)])
@@ -354,8 +375,9 @@ def gemm_cfg(arch, variant=None):
     return GeneratorCollection([MKL(arch)])
 
 
-def add(generator):
-  ader_dg = ADERDG(order=2,
+from yateto.helper import GraphvisHelper
+def add(generator, view=True):
+  ader_dg = ADERDG(order=4,
                    multipleSimulations=1,
                    matricesDir="../../../generated_code/matrices",
                    memLayout="../../../auto_tuning/config/dense.xml")
@@ -365,3 +387,10 @@ def add(generator):
   #ader_dg.addLocal(generator)
   #ader_dg.addNeighbor(generator)
   ader_dg.addTime(generator)
+
+  parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-default')
+  if view:
+    for kernel in generator.kernels():
+      parse_tree_visuzlizer.visualize(tree_name=kernel.name,
+                                      tree_root=kernel.ast[0],
+                                      is_display=False)

@@ -5,11 +5,19 @@ from abc import ABC, abstractmethod
 
 class ASpp(ABC):
   def __init__(self, shape):
+    """
+    Args:
+      shape Tuple[int, ...]: a tensor shape
+    """
     self.shape = shape
-    self.size = 1
+
+    # compute a tensor volume
+    self.size = 1  # int
     for s in shape:
       self.size *= s
-    self.ndim = len(shape)
+
+    # compute the number of tensor dimensions
+    self.ndim = len(shape)  # int
 
   def identity(self):
     return self
@@ -50,6 +58,7 @@ class ASpp(ABC):
   def as_ndarray(self):
     pass
 
+
 class dense(ASpp):
   def count_nonzero(self):
     return self.size
@@ -57,30 +66,64 @@ class dense(ASpp):
   def is_dense(self):
     return True
 
+
   def nnzbounds(self):
-    return [(0, s-1) for s in self.shape]
+    """
+    Returns:
+      List[Tuple[int, int]]: max and min index along each dimension of a tensor
+    """
+    return [(0, size - 1) for size in self.shape]
+
 
   def nonzero(self):
     return np.ones(self.shape, dtype=bool, order=general.NUMPY_DEFAULT_ORDER).nonzero()
 
+
   def copy(self):
+    """
+    Returns:
+      dense: a copy of an instance
+    """
     return type(self)(self.shape)
 
+
   def reshape(self, shape):
+    """Creates another instance of dense class but with a different shape
+
+    NOTE: a volume of a new shape must be the same as a volume of the old one
+
+    Args:
+      shape (Tuple[int, ...]): a new tensor shape
+
+    Returns:
+      dense: a new instance of a dense class with a different tensor shape but with the same size
+    """
     rsh = type(self)(shape)
     assert rsh.size == self.size
     return rsh
 
-  def transposed(self, perm):
-    return type(self)(tuple(self.shape[p] for p in perm))
+
+  def transposed(self, axes_order):
+    """Creates a new instance of a dense class with swapped dimensions
+
+    Args:
+      axes_order (Union[List[int], Tuple[int, ...]]): a new oder of dimensions
+
+    Returns:
+      dense: a new instance with swapped dimensions
+    """
+    return type(self)(tuple(self.shape[axis] for axis in axes_order))
+
 
   def indexSum(self, sourceIndices, targetIndices):
     return type(self)(tuple(self.shape[sourceIndices.find(targetIndex)] for targetIndex in targetIndices))
+
 
   @staticmethod
   def add(a1, a2):
     assert(a1.shape == a2.shape)
     return dense(a1.shape)
+
 
   @staticmethod
   def einsum(description, a1, a2):
@@ -98,19 +141,23 @@ class dense(ASpp):
     else:
       raise ValueError(description + ' not understood.')
 
+
   @staticmethod
   def array_equal(a1, a2):
     return a1.shape == a2.shape
 
+
   def as_general(self):
     return general(self.as_ndarray())
+
 
   def as_ndarray(self):
     return np.ones(self.shape, dtype=bool, order=general.NUMPY_DEFAULT_ORDER)
 
+
 class general(ASpp):
   NUMPY_DEFAULT_ORDER = 'F'
-  OPTIMIZE_EINSUM = {'optimize': True } if np.lib.NumpyVersion(np.__version__) >= '1.12.0' else {}
+  OPTIMIZE_EINSUM = {'optimize': True} if np.lib.NumpyVersion(np.__version__) >= '1.12.0' else {}
 
   def __init__(self, npspp: np.ndarray):
     super().__init__(npspp.shape)

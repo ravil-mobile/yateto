@@ -53,16 +53,28 @@ class BLASlike(GemmTool):
 
 class MKL(BLASlike):
   def __init__(self, arch):
+    """
+    arch (Architecture): an instance of Architecture class which holds basic information
+                         about a target compute architecture
+    """
     super().__init__('cblas_{}gemm'.format(arch.precision.lower()), ['mkl_cblas.h'])
 
 
 class OpenBLAS(BLASlike):
   def __init__(self, arch):
+    """
+    arch (Architecture): an instance of Architecture class which holds basic information
+                         about a target compute architecture
+    """
     super().__init__('cblas_{}gemm'.format(arch.precision.lower()), ['cblas.h'])
 
 
 class BLIS(BLASlike):
   def __init__(self, arch):
+    """
+    arch (Architecture): an instance of Architecture class which holds basic information
+                         about a target compute architecture
+    """
     super().__init__('bli_{}gemm'.format(arch.precision.lower()), ['blis.h'], '{0} _blis_alpha; {0} _blis_beta;'.format(arch.typename))
     self._typename = arch.typename
 
@@ -83,6 +95,10 @@ class BLIS(BLASlike):
 
 class SeissolCudaBlas(BLASlike):
   def __init__(self, arch):
+    """
+    arch (Architecture): an instance of Architecture class which holds basic information
+                         about a target compute architecture
+    """
     super().__init__(operation_name='cuda_blas_gemm'.format(arch.precision.lower()),
                      includes=['cuda_utils.cuh'])
 
@@ -159,10 +175,12 @@ class PSpaMM(CodeGenerator):
   def blockSize(self, m, n, k):
     return dict()
 
+
 class GeneratorCollection(object):
   def __init__(self, gemmTools: List[GemmTool]):
     self.gemmTools = gemmTools
     self.selected = set()
+
 
   def getGemmTool(self, m, n, k, sparseA, sparseB, transA, transB, alpha, beta):
     tools = dict()
@@ -179,8 +197,13 @@ class GeneratorCollection(object):
 
     return select
 
+
 class DefaultGeneratorCollection(GeneratorCollection):
   def __init__(self, arch):
+    """
+    arch (Architecture): an instance of Architecture class which holds basic information
+                         about a target compute architecture
+    """
     super().__init__([])
     libxsmm = LIBXSMM(arch)
     pspamm = PSpaMM(arch)

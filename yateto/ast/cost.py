@@ -14,6 +14,7 @@ class CostEstimator(ABC):
   def generic_estimate(self, node):
     pass
 
+
 class ShapeCostEstimator(CostEstimator):
   def generic_estimate(self, node):
     return 0
@@ -30,6 +31,7 @@ class ShapeCostEstimator(CostEstimator):
       cost *= size
     return cost
 
+
 class CachedCostEstimator(CostEstimator):
   def __init__(self):
     self._cost = dict()
@@ -40,6 +42,7 @@ class CachedCostEstimator(CostEstimator):
     cost = super().estimate(node)
     self._cost[node] = cost
     return cost
+
 
 class BoundingBoxCostEstimator(CachedCostEstimator):
   def __init__(self):
@@ -78,6 +81,7 @@ class BoundingBoxCostEstimator(CachedCostEstimator):
     bb = BoundingBox([r for i,r in enumerate(tbb) if i != pos])
     self._cache[node] = bb
     return tbb.size() - bb.size()
+
 
 class ExactCost(CachedCostEstimator):
   def __init__(self):

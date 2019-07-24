@@ -42,18 +42,35 @@ from .memory import DenseMemoryLayout
 
 class Architecture(object):
   def __init__(self, name, precision, alignment, enablePrefetch=False):
+    """
+    Args:
+      name (str): an compute architecture name
+      precision (str): a character which describes precision to be used during source code
+                       generation i.e. 's' - single; 'd' - double
+      alignment (int): a vector register size in bytes
+      enablePrefetch (bool): a flag which tells yateto whether generate a compute architecture
+                             is able to prefetch data from memory
+
+    Raises:
+      ValueError: if provided precision is neither 'd' nor 's' i.e. neither double or single,
+                  respectively.
+    """
     self.name = name
     self.precision = precision.upper()
     if self.precision == 'D':
       self.bytesPerReal = 8
       self.typename = 'double'
       self.epsilon = 2.22e-16
+
+
     elif self.precision == 'S':
       self.bytesPerReal = 4
       self.typename = 'float'
       self.epsilon = 1.19e-7
     else:
       raise ValueError('Unknown precision type ' + self.precision)
+
+
     self.alignment = alignment
     assert self.alignment % self.bytesPerReal == 0
     self.alignedReals = self.alignment // self.bytesPerReal
@@ -63,6 +80,7 @@ class Architecture(object):
     self.ulongTypename = 'unsigned long'
 
     self._tmpStackLimit = 524288
+
 
   def setTmpStackLimit(self, tmpStackLimit):
     self._tmpStackLimit = tmpStackLimit
@@ -93,24 +111,20 @@ class Architecture(object):
 
 
 def getArchitectureIdentifiedBy(ident):
+    """Creates a particular architecture object based on the input string.
+
+    Args:
+      ident (str): a string which describes the target precision (the first
+                   character) and architecture type (using the rest of the characters)
+
+    Returns:
+      Architecture: a specific compute architecture
     """
-    Creates a particular architecture object based on the input string.
-
-    Parameters
-    ----------
-    ident : str
-      text string describes the target precision (as the first
-      character) and architecture (using the rest of the characters)
-
-    Returns
-    -------
-    arch : an instance of Architecture class
-    """
-
     precision = ident[0].upper()
     name = ident[1:]
 
     # implementation of switch case construct in python
+    # NOTE: Libxsmm currently supports prefetch only for KNL kernels
     arch = {
       'noarch': Architecture(name, precision, 16, False),
       'wsm':    Architecture(name, precision, 16, False),
@@ -118,28 +132,23 @@ def getArchitectureIdentifiedBy(ident):
       'hsw':    Architecture(name, precision, 32, False),
       'skx':    Architecture(name, precision, 64, True),
       'knc':    Architecture(name, precision, 64, False),
-      'knl':    Architecture(name, precision, 64, True) # Libxsmm currently supports prefetch only for KNL kernels
+      'knl':    Architecture(name, precision, 64, True)
     }
     return arch[name]
 
 
 def useArchitectureIdentifiedBy(ident):
-    """
-    Creates an architecture object initialized according
+    """ Creates an architecture object initialized according
     to the input string as well as initializes DenseMemoryLayout
     class with the created architecture object
 
-    Parameters
-    ----------
-    ident : str
-      text string describes the target precision (the first
-      character) and architecture type (using the rest of the characters)
+    Args:
+      ident (str): a string which describes the target precision (the first
+                   character) and architecture type (using the rest of the characters)
 
-    Returns
-    -------
-    arch : an instance of Architecture class
+    Returns:
+      Architecture: a specific compute architecture
     """
-
     arch = getArchitectureIdentifiedBy(ident)
     DenseMemoryLayout.setAlignmentArch(arch)
     return arch

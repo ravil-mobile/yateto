@@ -65,7 +65,7 @@ def __transposeMatrix(matrix):
     matrix (Dict[Tuple[int, int], float]): sparse matrix specification as a hash table
 
   Returns:
-    Dict[Tuple[int, int], float]: transpose matrix description
+    Dict[Tuple[int], float]: transpose matrix description
   """
 
   transposed_matrix = dict()
@@ -152,7 +152,7 @@ def __complain(child):
   """Raises an exception in case of a violation of the xml-matrix format specification
 
   Args:
-    child: a node of an xml parse tree
+    child (TODO): a node of an xml parse tree
 
   Returns:
 

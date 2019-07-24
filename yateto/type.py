@@ -90,10 +90,10 @@ class Tensor(AbstractType):
 
     Args:
       name (str): tensor name. The name string must match a regex defined by VALID_NAME
-      shape (Tuple[int, int]): shape of a tensor
+      shape (Tuple[int, ...]): shape of a tensor
       spp (TODO): sparsity pattern of a tensor
       memoryLayoutClass (Type[MemoryLayout]):
-      alignStride (bool): a flag which tell yateto whether to align a matrix memory layout
+      alignStride (bool): a flag which tells yateto whether to align a matrix memory layout
                           for vectorization
     """
 
@@ -117,10 +117,14 @@ class Tensor(AbstractType):
       if isinstance(spp, dict):
         if not isinstance(next(iter(spp.values())), bool):
           self._values = spp
+
         npspp = zeros(shape, dtype=bool, order=aspp.general.NUMPY_DEFAULT_ORDER)
+
         for multiIndex, value in spp.items():
           npspp[multiIndex] = value
+
         self._spp = aspp.general(npspp)
+
       elif isinstance(spp, ndarray) or isinstance(spp, aspp.ASpp):
         if isinstance(spp, ndarray):
           if spp.dtype.kind == 'f':
@@ -130,10 +134,12 @@ class Tensor(AbstractType):
       else:
         raise ValueError(name, 'Matrix values must be given as dictionary (e.g. {(1,2,3): 2.0} or as numpy.ndarray.')
     else:
-      # if the user din't specify a certain sparsity pattern, then
-      # create a dense sparsity pattern object with a given shape from assp module
+
+      # if the user didn't specify a certain sparsity pattern, then
+      # create a dense sparsity pattern object from assp module with a given shape
       self._spp = aspp.dense(shape)
-    self._groupSpp = self._spp
+
+    self._groupSpp = self._spp  # TODO: ask what the difference is between _spp and _groupSpp
 
     # set memory layout for a tensor
     self.setMemoryLayout(memoryLayoutClass, alignStride)
@@ -163,17 +169,18 @@ class Tensor(AbstractType):
     initialized with the current tensor object and index names
 
     Args:
-      indexNames: a string of tensor indices
+      indexNames (str): a string of tensor indices
 
     Returns:
-      an instance of IndexedTensor
+      IndexedTensor: an instance of IndexedTensor
     """
     return IndexedTensor(self, indexNames)
-  
-  def shape(self) -> Tuple[int]:
+
+
+  def shape(self):
     """
     Returns:
-      shape of the tensor i.e. sizes of each dimension
+      Tuple[int]: shape of a tensor i.e. sizes of each dimension
     """
     return self._shape
 
@@ -377,7 +384,7 @@ class Collection(object):
       name (str): a name of a tensor
 
     Returns:
-      [Tuple[int], int]: a tensor group based on a tensor name
+      Union[Tuple[int], int]: a tensor group based on a tensor name
 
     Examples:
       >>> name = "aTensor(1,2,3)"

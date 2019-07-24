@@ -73,13 +73,15 @@ class DenseMemoryLayout(MemoryLayout):
       self._stride = stride
     else:
       self._computeStride()
-  
+
+
   def _computeStride(self):
     stride = [1]
     for i in range(len(self._bbox)-1):
       stride.append(stride[i] * self._bbox[i].size())
     self._stride = tuple(stride)
-  
+
+
   def _alignBB(self):
     if self.ALIGNMENT_ARCH is not None:
       self._range0 = self._bbox[0]
@@ -87,7 +89,8 @@ class DenseMemoryLayout(MemoryLayout):
       self._bbox = BoundingBox([rnew] + self._bbox[1:])
     else:
       warnings.warn('Set architecture with DenseMemoryLayout.setAlignmentArch(arch) if you want to use the align stride feature.', UserWarning)
-  
+
+
   def alignedStride(self):
     if self.ALIGNMENT_ARCH is None:
       return False
@@ -95,18 +98,22 @@ class DenseMemoryLayout(MemoryLayout):
     ldOk = self._stride[0] == 1 and (len(self._stride) == 1 or self.ALIGNMENT_ARCH.checkAlignment(self._stride[1]))
     return offsetOk and ldOk
 
+
   def mayVectorizeDim(self, dim):
     if self.ALIGNMENT_ARCH is None:
       return False
     return self.ALIGNMENT_ARCH.checkAlignment(self._bbox[dim].size())
+
 
   @classmethod
   def fromSpp(cls, spp, alignStride=False):
     bbox = BoundingBox.fromSpp(spp)
     return cls(spp.shape, bbox, alignStride=alignStride)
 
+
   def __contains__(self, entry):
     return entry in self._bbox
+
 
   def permuted(self, permutation):
     newShape = tuple([self._shape[p] for p in permutation])
@@ -115,6 +122,7 @@ class DenseMemoryLayout(MemoryLayout):
     newBB = BoundingBox([copy.copy(originalBB[p]) for p in permutation])
     return DenseMemoryLayout(newShape, newBB, alignStride=self._range0 is not None)
 
+
   def address(self, entry):
     assert entry in self._bbox
     a = 0
@@ -122,9 +130,11 @@ class DenseMemoryLayout(MemoryLayout):
       a += (e-self._bbox[i].start)*self._stride[i]
     return a
 
+
   def subtensorOffset(self, topLeftEntry):
     return self.address(topLeftEntry)
-  
+
+
   def notWrittenAddresses(self, writeBB):
     if writeBB == self._bbox:
       return []
@@ -134,22 +144,28 @@ class DenseMemoryLayout(MemoryLayout):
     we = [range(w.start, w.stop) for w in writeBB]
     return [self.address(e) for e in set(itertools.product(*re)) - set(itertools.product(*we))]
 
+
   def stride(self):
     return self._stride
-  
+
+
   def stridei(self, dim):
     return self._stride[dim]
-  
+
+
   def bbox(self):
     return self._bbox
+
 
   def bboxi(self, dim):
     return self._bbox[dim]
 
+
   def requiredReals(self):
     size = self._bbox[-1].size() * self._stride[-1]
     return size
-  
+
+
   def addressString(self, indices, I = None):
     if I is None:
       I = set(indices)
@@ -162,6 +178,7 @@ class DenseMemoryLayout(MemoryLayout):
         a.append('{}*{}'.format(self._stride[p], indices[p]))
     return ' + '.join(a)
 
+
   def isAlignedAddressString(self, indices, I = None):
     if I is None:
       I = set(indices)
@@ -171,9 +188,11 @@ class DenseMemoryLayout(MemoryLayout):
         return False
     return True
 
+
   def mayFuse(self, positions):
     return all( [self._stride[j] == self._shape[i]*self._stride[i] for i,j in zip(positions[:-1], positions[1:])] )
-  
+
+
   def _subShape(self, positions):
     sub = 1
     for p in positions:
