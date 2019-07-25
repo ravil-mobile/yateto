@@ -41,6 +41,8 @@ autodoc_default_flags = ['members', 'undoc-members', 'private-members', 'show-in
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+plantuml = 'java -jar {}/Documents/Programs/plantuml.jar'.format(os.environ['HOME'])
+
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.todo',
@@ -48,16 +50,19 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
     'sphinx.ext.coverage',
-    'sphinx_autodoc_typehints'
+    'sphinx_autodoc_typehints',
+    'sphinx.ext.graphviz',
+    'sphinxcontrib.plantuml'
 ]
 
-
+'''
 try:
     import sphinxcontrib.spelling
 except ImportError:
     pass
 else:
     extensions.append("sphinxcontrib.spelling")
+'''
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

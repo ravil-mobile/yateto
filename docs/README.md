@@ -1,5 +1,12 @@
 ### Install python dependencies in order to work with documentation
+
     pip install -r requirements.txt
+    pip install sphinxcontrib-plantuml
+    export GRAPHVIZ_DOT=$(which dot)
+
+Download planuml.jar and place it in: 
+
+	~/Documents/Programs
 
 
 ### How to compile documentation:

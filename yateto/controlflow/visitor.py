@@ -84,29 +84,70 @@ class AST2ControlFlow(Visitor):
 
 class SortedGlobalsList(object):
     def visit(self, cfg):
+        """Generates a sorted set of global variables involved in both left- and right-hand sides of
+        expressions within an execution block (control flow graph)
+
+        The generated set is sorted based on names of the involved variables
+
+        Args:
+            cfg (List[ProgramPoint]): an execution block (aka a control flow graph)
+
+        Returns:
+            Set[Variable]: global variables within an execution block
+        """
         V = set()
-        for pp in cfg:
-            if pp.action:
-                V = V | pp.action.result.variables() | pp.action.variables()
+
+        # iterate through all program points
+        for program_point in cfg:
+            if program_point.action:
+
+                # append a set with variables at both left- and right-hand sides
+                V = V | program_point.action.result.variables() | program_point.action.variables()
+
+
         return sorted([var for var in V if var.isGlobal()], key=lambda x: str(x))
 
 
 class SortedPrefetchList(object):
     def visit(self, cfg):
+        """Generates a sorted list of tensors involved in an execution block (control flow graph)
+        which can be prefetched during a program execution i.e. prefetch commands will be inserted
+        into a source code of a target compute architecture allows.
+
+        Args:
+            cfg (List[ProgramPoint]): an execution block (aka a control flow graph)
+
+        Returns:
+            Set[List[Tensor]]: TODO: ask whether it is a right data type
+        """
         V = set()
-        for pp in cfg:
-            if pp.action and pp.action.isRHSExpression() and pp.action.term.node.prefetch is not None:
-                V = V | {pp.action.term.node.prefetch}
+        for program_point in cfg:
+            if program_point.action \
+                    and program_point.action.isRHSExpression() \
+                    and program_point.action.term.node.prefetch is not None:
+
+                V = V | {program_point.action.term.node.prefetch}
+
         return sorted([v for v in V], key=lambda x: x.name())
 
 
 class ScalarsSet(object):
     def visit(self, cfg):
+        """Generates a set of scalars involved in an execution block (control flow graph)
+
+        Args:
+            cfg (List[ProgramPoint]): an execution block (aka a control flow graph)
+
+        Returns:
+            Set[Union[Scalar]]: variables within an execution block
+        """
         S = set()
-        for pp in cfg:
-            if pp.action:
-                if isinstance(pp.action.scalar, Scalar):
-                    S = S | {pp.action.scalar}
+
+        # iterate through all program points
+        for program_point in cfg:
+            if program_point.action:
+                if isinstance(program_point.action.scalar, Scalar):
+                    S = S | {program_point.action.scalar}
         return S
 
 

@@ -11,6 +11,11 @@ class CudaKernelFactory(object):
   ERROR_NAME = '_error'
 
   def __init__(self, cpp, arch):
+    """
+    Args:
+      cpp (TODO): a file descriptor
+      arch (Architecture): TODO
+    """
     self._cpp = cpp
     self._arch = arch
     self._freeList = list()
@@ -114,6 +119,11 @@ class CudaKernelFactory(object):
 
 class CudaOptimisedKernelFactory(CudaKernelFactory):
   def __init__(self, cpp, arch):
+    """
+    Args:
+      cpp (TODO): a file descriptor
+      arch (Architecture): TODO
+    """
     super().__init__(cpp, arch)
 
   def create_LoopOverGEMM(self, node, result, arguments, add, scalar, prefetchName, routineCache, gemm_cfg):

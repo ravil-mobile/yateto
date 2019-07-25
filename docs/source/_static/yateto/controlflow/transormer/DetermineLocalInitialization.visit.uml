@@ -1,0 +1,138 @@
+      @startuml
+
+      title Flow diagram
+
+
+      start
+      note left
+          Given an execution block called 'cfg'
+          (aka control flow graph) i.e. a list
+          of program points
+      end note
+
+      :num_buffers_counter = 0
+      used_buffers_table = dict()
+      free_buffers_deque = deque()
+      buffer_size_table = dict();
+
+      note left
+          init a buffer counter,
+          buffer tables and a deque
+      end note
+
+      :n = len(cfg)
+      i = 0;
+      note left
+          Get number of program points
+      end note
+
+      while (i < (n-1)) is (Yes)
+
+          :ProgramAction = cfg[i].action
+          Result = ProgramAction.result;
+
+          note left
+              Result is a right hand side
+              of an expression. A result
+              can be held in either a global
+              or a temporary variable
+          end note
+
+          if ((ProgramAction.exist) and (ProgramAction.isCompound) and (Result.isLocal)) then (yes)
+
+          :;
+          note left
+              At this point, we consider only expressions
+              which have a form y += x i.e. (y = y + x) and
+              the results are held in temporary varaibles
+          end note
+
+          if ((free_buffers_deque) is empty) then (yes)
+              :current_buffer_index = num_buffers_counter
+              num_buffers_counter += 1;
+          else (not)
+              :current_buffer_index = free_buffers_deque.pop();
+          endif
+
+
+          :cfg[i].bufferMap[Result] = current_buffer_index
+          usedBuffers[Result] = current_buffer_index;
+
+          :needed_buffer_size = Result.memoryLayout().requiredReals();
+
+          note left
+              Compute memory size
+              to hold a result of
+              a current computation
+          end note
+
+          if (if (current_buffer_index) in (buffer_size_table)) then(yes)
+
+              :previous_buffer_size = buffer_size_table[current_buffer_index];
+              :needed_buffer_size = max(previous_buffer_size, needed_buffer_size);
+
+          else (no)
+          endif
+
+          :buffer_size_table[current_buffer_index] = needed_buffer_size;
+
+          note left
+              Adjust enough memory
+              for each buffer to
+              hold resutls of
+              intermediate
+              computations
+          end note
+
+
+          :free = cfg[i].live - cfg[i+1].live
+          number_free_varaibles = len(free)
+          j = 0;
+
+          note left
+              compute a set of variables which
+              are not going to be used
+              at the next program point
+              NOTE .live is a set of variables
+          end note
+
+
+
+          while (j < number_free_varaibles)  is (yes)
+            :local = free.pop();
+
+            if (if (local) in (used_buffers_table)) then (yes)
+
+              :free_buffer_index = used_buffers_table.pop(local);
+              :free_buffers_deque.appendleft(free_buffer_index);
+
+            else (no)
+            endif
+            :j += 1;
+          endwhile (No)
+
+          else (no)
+          endif
+
+      :i += 1;
+      endwhile (No)
+
+      if (len(cfg) > 0) then (yes)
+      :cfg[0].initBuffer = buffer_size_table;
+
+      note left
+          The first program point is
+          going to hold a buffer size
+          table and can be used to
+          initialize all buffers
+          at the entry point of
+          an exectucion block
+      end note
+
+      else (no)
+      endif
+
+      : return cfg;
+      stop
+
+      @enduml

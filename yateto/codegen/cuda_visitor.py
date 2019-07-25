@@ -53,6 +53,10 @@ class CudaKernelGenerator(object):
 
 
   def __init__(self, arch):
+    """
+    Args:
+      arch (Architecture): TODO
+    """
     self._arch = arch
 
 
@@ -67,6 +71,18 @@ class CudaKernelGenerator(object):
 
 
   def generate(self, cpp, cfg, factory,  routineCache, gemm_cfg):
+    """TODO
+
+    Args:
+      cpp (TODO): a file which a generated code is going to be written to
+      cfg (List[ProgramPoint]): an execution block (a control flow graph)
+      factory (Union[Type[KernelFactory], Type[CudaKernelFactory]]): TODO
+      routineCache (RoutineCache): TODO
+      gemm_cfg (Generator Collection): list of gemm generators
+
+    Returns:
+      int: an expected number of floating point operaions
+    """
     hwFlops = 0
     cfg = DetermineLocalInitialization().visit(cfg)
     temp_pointers = list()
@@ -121,6 +137,7 @@ class CudaKernelGenerator(object):
 
     return hwFlops
 
+
 class CudaOptimisedKernelGenerator(CudaKernelGenerator):
   NAMESPACE = 'kernel'
   EXECUTE_NAME = 'execute'
@@ -131,11 +148,26 @@ class CudaOptimisedKernelGenerator(CudaKernelGenerator):
   MEMBER_FUNCTION_PTR_NAME = 'member_function_ptr'
   
   def __init__(self, arch, routineCache):
+    """
+    Args:
+      arch (Architecture): TODO
+      routineCache (RoutineCache): TODO
+    """
     super().__init__(arch)
     self._routineCache = routineCache
   
   class KernelOutline(object):
     def __init__(self, nonZeroFlops, hwFlops, tensors, writable, prefetch, scalars, function):
+      """
+      Args:
+        nonZeroFlops: TODO
+        hwFlops: TODO
+        tensors: TODO
+        writable: TODO
+        prefetch: TODO
+        scalars: TODO
+        function: TODO
+      """
       self.nonZeroFlops = nonZeroFlops
       self.hwFlops = hwFlops
       self.tensors = tensors
@@ -146,43 +178,72 @@ class CudaOptimisedKernelGenerator(CudaKernelGenerator):
 
     @classmethod
     def _addTensor(cls, tensor, tensors):
-      bn = tensor.baseName()
-      g = tensor.group()
-      if bn in tensors:
-        p = next(iter(tensors[bn]))
-        if len(p) != len(g):
-          raise ValueError('Group size mismatch ({} vs {}) for {}.'.format(p, g, bn))
-        tensors[bn] = tensors[bn] | {g}
+      """
+
+      A table uses base tensor names as keys. Each key corresponds to group indices
+      of all tensors involved in a kernel family. For example, given to tensor names 'A(0,1)'
+      and 'A(1,1)' from a kernel family 'A'. A resultant table entry will the following have a form:
+      table['A'] -> {(0,1), (1,1)}. In case of a general tensor i.e. which is not included into
+      any family, for example 'C', the corresponding entry is going to look like:
+      table['C'] = ()
+
+      NOTE: the method is static
+
+      Args:
+        tensor (Type[Tensor]):
+        tensors (OrderedDict[str, Set[Union[Typle[int, ..,], int]]]):
+
+      Raises:
+        ValueError:
+      """
+      base_name = tensor.baseName()
+      group_index = tensor.group()
+
+
+      if base_name in tensors:
+
+        # take the first index of a kernel family as an example to check dimensions
+        first = next(iter(tensors[base_name]))
+
+        if len(first) != len(group_index):
+          raise ValueError('Group size mismatch ({} vs {}) for {}.'.format(first,
+                                                                           group_index,
+                                                                           base_name))
+        tensors[base_name] = tensors[base_name] | {group_index}
       else:
-        tensors[bn] = {g}
+        tensors[base_name] = {group_index}
 
 
   def generateKernelOutline(self, nonZeroFlops, cfg, gemm_cfg):
-    """
+    """TODO
 
     Args:
-      nonZeroFlops: TODO: ask Carsten
-      cfg: control flow graph
-      gemm_cfg: list of gemm generators
+      nonZeroFlops (int): TODO: ask Carsten
+      cfg (List[ProgramPoint]): control flow graph
+      gemm_cfg (Generator Collection): list of gemm generators
 
     Returns:
-      an instance of KernelOutline
+      KernelOutline: TODO; NOTE: class KernelOutline is nested into [Cuda]OptimisedKernelGenerator
     """
 
     # iterate through a give control flow graph
     # and collect info about scalars and variables
-    scalars = ScalarsSet().visit(cfg)
-    variables = SortedGlobalsList().visit(cfg)
+    scalars = ScalarsSet().visit(cfg)  # Set[Union[Scalar]]
+    variables = SortedGlobalsList().visit(cfg)  # List[Variable]
 
-    tensors = collections.OrderedDict()
-    writable = dict()
+    tensors = collections.OrderedDict()  # OrderedDict[str, Set[Union[Typle[int, ..,], int]]]
+    writable = dict()  # Dict[str, bool]
 
-    # iterate through all variable of the control flow graph
+    # iterate through all global variable of an execution block (aka a control flow graph)
     for var in variables:
       # add tensors to a list
+      # NOTE: _addTensor is a static method of class
+      #        KernelOutline nested into [Cuda]OptimisedKernelGenerator
       self.KernelOutline._addTensor(var.tensor, tensors)
 
 
+      # add a tensor to a table of 'writable' variables and assign
+      # the bool value according to the content of the current variable
       base_name = var.tensor.baseName()
       if base_name in writable:
         if var.writable:
@@ -190,7 +251,8 @@ class CudaOptimisedKernelGenerator(CudaKernelGenerator):
       else:
         writable[base_name] = var.writable
 
-
+    # generate a table of tensors that can be prefetched during a code execution
+    # NOTE: a resultant list is always empty
     prefetchTensors = SortedPrefetchList().visit(cfg)
     prefetch = collections.OrderedDict()
     for tensor in prefetchTensors:
@@ -199,13 +261,14 @@ class CudaOptimisedKernelGenerator(CudaKernelGenerator):
 
     # generate C-code for tensor contraction and write to an StringIO instance
     functionIO = StringIO()
-    function = ''
+    function = ''  # str: an empty string which will be filled with TODO
     with Cpp(functionIO) as fcpp:
 
       # select a factory
       factory = CudaOptimisedKernelFactory(fcpp, self._arch)
 
-      # generate C-code from the control from graph using the factory and a given GEMM method
+      # generate C-code from a control from graph using a factory and a given GEMM method
+      # NOTE:  fcpp is, in fact, functionIO
       hwFlops = super().generate(cpp=fcpp,
                                  cfg=cfg,
                                  factory=factory,
@@ -215,7 +278,7 @@ class CudaOptimisedKernelGenerator(CudaKernelGenerator):
       # free temporary variables in case if there were allocate on the heap
       factory.freeTmp()
 
-      # get generated code as a text from the StringIO instance
+      # get a generated code as a text from the StringIO instance
       function = functionIO.getvalue()
 
 
@@ -237,8 +300,8 @@ class CudaOptimisedKernelGenerator(CudaKernelGenerator):
     Args:
       cpp: a handle for the source file
       header: a handle for the source file
-      name: name of a kernel
-      kernelOutlines: TODO: ???
+      name (str): name of a kernel
+      kernelOutlines (List[kernelOutline]): TODO: ???
       familyStride: TODO: ???
 
     Returns:

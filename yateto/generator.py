@@ -150,7 +150,7 @@ class Kernel(object):
 
     # a nested helper function
     def print_cfd(cfg, optimization_name):
-      to_print = False
+      to_print = True
       if to_print:
         marging = "="*80
         half_marging = "="*30
@@ -164,25 +164,29 @@ class Kernel(object):
       ast2cf.visit(ast)
 
     self.cfg = ast2cf.cfg()
-    print_cfd(cfg=self.cfg, optimization_name="ast2ControlFlow")
+    #print_cfd(cfg=self.cfg, optimization_name="ast2ControlFlow")
 
     self.cfg = MergeScalarMultiplications().visit(self.cfg)
-    print_cfd(cfg=self.cfg, optimization_name="MergeScalarMultiplications")
+    #print_cfd(cfg=self.cfg, optimization_name="MergeScalarMultiplications")
 
     self.cfg = LivenessAnalysis().visit(self.cfg)
-    print_cfd(cfg=self.cfg, optimization_name="LivenessAnalysis")
+    #print_cfd(cfg=self.cfg, optimization_name="LivenessAnalysis")
 
     self.cfg = SubstituteForward().visit(self.cfg)
-    print_cfd(cfg=self.cfg, optimization_name="SubstituteForward")
+    #print_cfd(cfg=self.cfg, optimization_name="SubstituteForward")
 
     self.cfg = SubstituteBackward().visit(self.cfg)
-    print_cfd(cfg=self.cfg, optimization_name="SubstituteBackward")
+    #print_cfd(cfg=self.cfg, optimization_name="SubstituteBackward")
 
     self.cfg = RemoveEmptyStatements().visit(self.cfg)
-    print_cfd(cfg=self.cfg, optimization_name="RemoveEmptyStatements")
+    #print_cfd(cfg=self.cfg, optimization_name="RemoveEmptyStatements")
 
     self.cfg = MergeActions().visit(self.cfg)
     print_cfd(cfg=self.cfg, optimization_name="MergeActions")
+
+    print('='*80)
+    for program_point in self.cfg:
+      print(program_point.bufferMap, program_point.initBuffer)
 
 
     
@@ -681,6 +685,11 @@ class CudaGenerator(object):
 
 
   def arch(self):
+    """
+    Returns:
+      Architecture: a reference to a specific Architecture instance which was given to a Generator
+
+    """
     return self._arch
 
 
