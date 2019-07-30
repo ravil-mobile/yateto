@@ -38,7 +38,7 @@ class Generic(object):
           flop += 1
         elif d.beta != 0.0:
           raise NotImplementedError
-        cpp( '{} {} {};'.format(self._formatTerm(1.0, d.result), op, self._formatTerm(alpha, d.term)) )
+        cpp('{} {} {};'.format(self._formatTerm(1.0, d.result), op, self._formatTerm(alpha, d.term)))
 
         return flop
 

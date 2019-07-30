@@ -55,6 +55,14 @@ class KernelFactory(object):
     self._freeList = []
 
   def _indices(self, var):
+    """TODO
+
+    Args:
+      var (Variable): TODO
+
+    Returns:
+      Indices: TODO
+    """
     shape = var.memoryLayout().shape()
     return Indices(string.ascii_lowercase[:len(shape)], shape)
 
@@ -148,7 +156,20 @@ class UnitTestFactory(KernelFactory):
   def create_ScalarMultiplication(self, node, result, arguments, add, scalar, prefetchName, routineCache, gemm_cfg):
     return self.simple(result, arguments[0], add, scalar, routineCache)
 
+
   def simple(self, result, term, add, scalar, routineCache):
+    """TODO
+
+    Args:
+      result (Variable): TODO
+      term (Variable): TODO
+      add (bool): TODO
+      scalar (Union[Scalar, float, None]): TODO
+      routineCache (Union[None, RoutineCache]): TODO
+
+    Returns:
+      int: a number of floating point operations
+    """
     g = self._indices(result)
     
     ranges = {idx: Range(0, g.indexSize(idx)) for idx in g}
@@ -161,10 +182,11 @@ class UnitTestFactory(KernelFactory):
     
     class AssignBody(object):
       def __call__(s):
-        self._cpp( '{} {} {};'.format(resultTerm, '+=' if add else '=', termTerm) )
+        self._cpp('{} {} {};'.format(resultTerm, '+=' if add else '=', termTerm))
         return 1 if add else 0
 
     return forLoops(self._cpp, g, ranges, AssignBody(), pragmaSimd=False)
+
 
   def compare(self, ref, target, epsMult = 100.0):
     g = self._indices(ref)

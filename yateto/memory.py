@@ -58,17 +58,31 @@ class DenseMemoryLayout(MemoryLayout):
     cls.ALIGNMENT_ARCH = arch
   
   def __init__(self, shape, boundingBox=None, stride=None, alignStride=False):
+    """
+    Args:
+      shape (Tuple[int, ...]): sizes of each tensor dimension
+      boundingBox (Union[BoundingBox, None]): TODO
+      stride (Union[Tuple[int, ...], None]): TODO
+      alignStride (bool): TODO
+    """
     super().__init__(shape)
 
+    # init a bounding box of a dense memory layout
     if boundingBox:
       self._bbox = boundingBox
     else:
-      self._bbox = BoundingBox([Range(0, s) for s in self._shape])
 
+      # Create the bounding box of a dense memory layout from a tensor shape
+      # if a bounding box was not provided by the user
+      self._bbox = BoundingBox([Range(0, size) for size in self._shape])
+
+    # align the first tensor dimension if vectorization is required
     self._range0 = None
     if alignStride:
       self._alignBB()
 
+
+    # init stride of each tensor dimension
     if stride:
       self._stride = stride
     else:
@@ -76,24 +90,45 @@ class DenseMemoryLayout(MemoryLayout):
 
 
   def _computeStride(self):
+    """Compute strides of each dimension of a tensor i.e. distances of each dimension
+    the first tensor element
+
+    Examples:
+      >>> from yateto.memory import DenseMemoryLayout
+      >>> layout = DenseMemoryLayout(shape=(3,4,3))
+      >>> layout._computeStride()
+      >>> layout.stride()
+      (1, 3, 12)
+    """
     stride = [1]
-    for i in range(len(self._bbox)-1):
+    for i in range(len(self._bbox) - 1):
       stride.append(stride[i] * self._bbox[i].size())
     self._stride = tuple(stride)
 
 
   def _alignBB(self):
+    """Aligns the first dimension of a dense memory layout to enable vectorization
+    """
     if self.ALIGNMENT_ARCH is not None:
+
+      # extract a range of the first dimension
       self._range0 = self._bbox[0]
-      rnew = Range( self.ALIGNMENT_ARCH.alignedLower(self._range0.start), self.ALIGNMENT_ARCH.alignedUpper(self._range0.stop) )
-      self._bbox = BoundingBox([rnew] + self._bbox[1:])
+
+      # align the first dimention according to the given compute architecture
+      new_leading_range = Range(self.ALIGNMENT_ARCH.alignedLower(self._range0.start),
+                                self.ALIGNMENT_ARCH.alignedUpper(self._range0.stop))
+
+      # substitude the old first dimnesion with a new (aligned) one
+      self._bbox = BoundingBox([new_leading_range] + self._bbox[1:])
     else:
-      warnings.warn('Set architecture with DenseMemoryLayout.setAlignmentArch(arch) if you want to use the align stride feature.', UserWarning)
+      warnings.warn('Set architecture with DenseMemoryLayout.setAlignmentArch(arch) '
+                    'if you want to use the align stride feature.', UserWarning)
 
 
   def alignedStride(self):
     if self.ALIGNMENT_ARCH is None:
       return False
+
     offsetOk = self.ALIGNMENT_ARCH.checkAlignment(self._bbox[0].start)
     ldOk = self._stride[0] == 1 and (len(self._stride) == 1 or self.ALIGNMENT_ARCH.checkAlignment(self._stride[1]))
     return offsetOk and ldOk
@@ -123,12 +158,30 @@ class DenseMemoryLayout(MemoryLayout):
     return DenseMemoryLayout(newShape, newBB, alignStride=self._range0 is not None)
 
 
-  def address(self, entry):
-    assert entry in self._bbox
-    a = 0
-    for i,e in enumerate(entry):
-      a += (e-self._bbox[i].start)*self._stride[i]
-    return a
+  def address(self, element_index_set):
+    """Compute a linearized element index, also called an element address, given an element
+    as a set of indices within a tensor memory layout
+
+    Args:
+      element_index_set (Tuple[int, ...]): an index set of a particular tensor element
+
+    Returns:
+      int: a linearized element index
+
+    Examples:
+      >>> tensor_shape = (3,2,4)
+      >>> memory_layout = DenseMemoryLayout(shape=tensor_shape)
+      >>> element_indices = (2,2,1)
+      >>> memory_layout.address(element_indices)
+      14
+    """
+    assert element_index_set in self._bbox
+
+    element_address = 0
+    for counter, index in enumerate(element_index_set):
+      element_address += (index - self._bbox[counter].start) * self._stride[counter]
+
+    return element_address
 
 
   def subtensorOffset(self, topLeftEntry):
@@ -136,13 +189,50 @@ class DenseMemoryLayout(MemoryLayout):
 
 
   def notWrittenAddresses(self, writeBB):
+    """Computes addresses of elements which are outside of a given memory layout region (writeBB)
+
+    Args:
+      writeBB (BoundingBox): a sub-tensor space which the user wants to write data in
+
+    Returns:
+      List[]: a list of linearized element tensor indices which are outside of writable tensor
+              space
+
+    Examples:
+      >>> from yateto.ast.indices import BoundingBox
+      >>> from yateto.ast.indices import Range
+      >>> range_1 = Range(start=1, stop=3)
+      >>> range_2 = Range(start=2, stop=4)
+      >>> box = BoundingBox([range_1, range_2])
+      >>> from yateto.memory import DenseMemoryLayout
+      >>> tensor_shape = (5, 6)
+      >>> memory_layout = DenseMemoryLayout(shape=tensor_shape)
+      >>> memory_layout.notWrittenAddresses(box)
+      [13, 0, 3, 29, 7, 21, 6, 25, 14, 27, 15, 1, 22, 4, 28, 5, 18, 24, 8, 26, 2, 20, 19, 23, 9, 10]
+    """
+
+    # return an empty list if a passed bounding box matches to a bounding box
+    # of the current instance of a dense memory layout instance
     if writeBB == self._bbox:
       return []
 
+
+    # ensure that all ranges of a passed bounding box are included in  (inside of)
+    # ranges of the current memory layout
     assert writeBB in self._bbox
-    re = [range(r.start, r.stop) for r in self._bbox]
-    we = [range(w.start, w.stop) for w in writeBB]
-    return [self.address(e) for e in set(itertools.product(*re)) - set(itertools.product(*we))]
+
+    # get all ranges of the current memory layout
+    layout_ranges = [range(box_range.start, box_range.stop) for box_range in self._bbox]
+
+    # get all ranges of the current memory layout
+    write_box_ranges = [range(box_range.start, box_range.stop) for box_range in writeBB]
+
+    # compute indices of a memory layout which is outside of a given (passed)
+    # bounding box
+    outside_indices = set(itertools.product(*layout_ranges)) \
+                      - set(itertools.product(*write_box_ranges))
+
+    return [self.address(index_set) for index_set in outside_indices]
 
 
   def stride(self):
@@ -162,6 +252,14 @@ class DenseMemoryLayout(MemoryLayout):
 
 
   def requiredReals(self):
+    """
+    # TODO: check this line of the code
+    size = self._bbox[-1].size() * self._stride[-1]
+    return size
+    """
+    if len(self._bbox) == 0:
+      return 1
+
     size = self._bbox[-1].size() * self._stride[-1]
     return size
 

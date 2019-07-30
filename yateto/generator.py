@@ -185,9 +185,6 @@ class Kernel(object):
     print_cfd(cfg=self.cfg, optimization_name="MergeActions")
 
     print('='*80)
-    for program_point in self.cfg:
-      print(program_point.bufferMap, program_point.initBuffer)
-
 
     
 class KernelFamily(object):
@@ -542,8 +539,10 @@ class Generator(object):
             cpp.classDeclaration(self.TEST_CLASS)
         with cpp.Class('{}::{}::{} : public CxxTest::TestSuite'.format(namespace, self.TEST_NAMESPACE, self.TEST_CLASS)):
           cpp.label('public')
+
           for kernel in self._kernels:
             UnitTestGenerator(self._arch).generate(cpp, kernel.name, kernel.name, kernel.cfg, gemm_cfg)
+
           for family in self._kernelFamilies.values():
             for group, kernel in family.items():
               UnitTestGenerator(self._arch).generate(cpp, kernel.name, family.name, kernel.cfg, gemm_cfg, group)
@@ -849,6 +848,7 @@ class CudaGenerator(object):
           unit_test_header('long long pspamm_num_total_flops = 0;')
         '''
 
+
         with unit_test_header.Namespace(namespace):
           with unit_test_header.Namespace(self.TEST_NAMESPACE):
             unit_test_header.classDeclaration(self.TEST_CLASS)
@@ -858,10 +858,12 @@ class CudaGenerator(object):
         with unit_test_header.Class('{} : public CxxTest::TestSuite'.format(full_test_class_name)):
           unit_test_header.label('public')
 
+
           # iterate through all kernels and declare then inside of the header file
           for kernel in self._kernels:
             test_function_name = CudaUnitTestGenerator.CXXTEST_PREFIX + kernel.name
             unit_test_header("void {}();".format(test_function_name))
+
 
           for family in self._kernelFamilies.values():
             for group, kernel in family.items():
@@ -884,21 +886,22 @@ class CudaGenerator(object):
 
       # generate the source code from parse trees for unit tests
       for kernel in self._kernels:
-        CudaUnitTestGenerator(self._arch).generate(unit_test_source,
-                                                   kernel.name,
-                                                   kernel.name,
-                                                   kernel.cfg,
-                                                   gemm_cfg,
+        CudaUnitTestGenerator(self._arch).generate(cpp=unit_test_source,
+                                                   testName=kernel.name,
+                                                   kernelClass=kernel.name,
+                                                   cfg=kernel.cfg,
+                                                   gemm_cfg=gemm_cfg,
                                                    function_namespace=full_test_class_name)
 
       for family in self._kernelFamilies.values():
         for group, kernel in family.items():
-          CudaUnitTestGenerator(self._arch).generate(unit_test_source,
-                                                     kernel.name,
-                                                     family.name,
-                                                     kernel.cfg,
-                                                     gemm_cfg,
-                                                     group)
+          CudaUnitTestGenerator(self._arch).generate(cpp=unit_test_source,
+                                                     testName=kernel.name,
+                                                     kernelClass=family.name,
+                                                     cfg=kernel.cfg,
+                                                     gemm_cfg=gemm_cfg,
+                                                     index=group,
+                                                     function_namespace=full_test_class_name)
 
     ################################################################################################
     print('Optimizing ASTs...')

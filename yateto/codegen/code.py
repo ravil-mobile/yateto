@@ -120,7 +120,7 @@ class Cpp:
   
   def emptyline(self, num_lines=1):
     self.out.write('\n'*num_lines)
-      
+
   def If(self, argument):
     return Block(self, 'if ({})'.format(argument))
       
@@ -175,5 +175,13 @@ class Cpp:
     self.__call__('#include "{}"'.format(header))
     
   def memset(self, name, numberOfValues, typename, offset=0):
+    """Generate a C-memset code for a initialize to zeros a piece of a tensor memory
+
+    Args:
+      name (str): a name of an actual tensor
+      numberOfValues (int): a size of a tensor memory chunk
+      typename (str): double of float
+      offset (int): TODO
+    """
     pointer = '&{}[{}]'.format(name, offset) if offset != 0 else name
     self.__call__('memset({}, 0, {} * sizeof({}));'.format(pointer, numberOfValues, typename))

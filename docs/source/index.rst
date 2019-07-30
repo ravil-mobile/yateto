@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to yateto's documentation!
-==================================
+Welcome to yateto's source code documentation!
+==============================================
 
 .. image:: _static/images/tensor.jpeg
     :align: center
@@ -12,6 +12,15 @@ Welcome to yateto's documentation!
 Image `source 
 <https://cdn-images-1.medium.com/max/1600/1*jqOq4maGmsyklNOwKDlVaw.jpeg>`_.
 
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Diagrams:
+
+   diagram-ast
+   diagram-yateto
+   diagram-controlflow
+   diagram-cogen
 
 .. toctree::
    :maxdepth: 4

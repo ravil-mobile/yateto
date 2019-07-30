@@ -100,13 +100,14 @@ class CudaKernelGenerator(object):
     cpp('// TODO: allocate all buffers at the main entry point of the program')
     for program_point in cfg:
 
+
       # collect all buffers (scratch memory) and allocate memory for them
       # TODO: perform memory allocation of buffers at the program entry point
-
       for buffer, size in program_point.initBuffer.items():
         #buffer_name = self._bufferName(buffer)
         buffer_name = self._get_cuda_buffer_name(buffer)
         factory.cuda_temporary(buffer_name, size)
+
 
       for local, buffer in program_point.bufferMap.items():
         #cpp('{} = {};'.format(local, self._bufferName(buffer)))
@@ -493,9 +494,10 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
       return prefix + str(var)
 
     baseName = prefix + var.tensor.baseName()
+
     group = var.tensor.group()
-    terms = [baseName] + [str(g) for g in group]
-    return prefix.join(terms)
+    terms = [baseName] + [str(index) for index in group]
+    return '_'.join(terms)
 
 
   @classmethod
@@ -530,7 +532,7 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
     else:
       function_name = self.CXXTEST_PREFIX + testName
 
-
+    print('\n'*3)
     with cpp.Function(function_name):
       cuda_factory = CudaUnitTestFactory(cpp, self._arch, self._name)
       cpu_factory = UnitTestFactory(cpp, self._arch, self._name)
@@ -545,7 +547,10 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
                                var.memoryLayout().requiredReals(),
                                iniZero=True)
 
-        
+        print("DEbUG: Name={}; Tensor={}; Var={}".format(str(var),
+                                                         var.tensor.memoryLayout().requiredReals(),
+                                                         var.memoryLayout().requiredReals()))
+
         shape = var.memoryLayout().shape()
         cpp('{supportNS}::DenseTensorView<{dim},{arch.typename},{arch.uintTypename}> {viewName}({utName}, {{{shape}}}, {{{start}}}, {{{shape}}});'.format(
             supportNS = SUPPORT_LIBRARY_NAMESPACE,
@@ -573,6 +578,7 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
       cpp('{}::{} {};'.format(CudaOptimisedKernelGenerator.NAMESPACE,
                               kernelClass,
                               self.KERNEL_VAR))
+
       for scalar in scalars:
         cpp( '{0}.{1} = {1};'.format(self.KERNEL_VAR, scalar))
 
@@ -833,7 +839,7 @@ class CudaInitializerGenerator(object):
                 groupSize=groupSize,
                 declarationOnly=declarationOnly,
                 alwaysArray=False,
-                constexpr=False)
+                constexpr=True)
 
 
   def _init(self, cpp, baseName, name, tensors, declarationOnly):

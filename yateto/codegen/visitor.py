@@ -314,18 +314,25 @@ class UnitTestGenerator(KernelGenerator):
     return '({})'.format(gstr) if gstr else ''
   
   def generate(self, cpp, testName, kernelClass, cfg, gemm_cfg, index=None):
+
     scalars = ScalarsSet().visit(cfg)
     scalars = sorted(scalars, key=str)
+
     variables = SortedGlobalsList().visit(cfg)
+
     with cpp.Function(self.CXXTEST_PREFIX + testName):
       factory = UnitTestFactory(cpp, self._arch, self._name)
 
-      for i,scalar in enumerate(scalars):
-        cpp('{} {} = {};'.format(self._arch.typename, scalar, float(i+2)))
+      for i, scalar in enumerate(scalars):
+        cpp('{0} {1} = {2};'.format(self._arch.typename,
+                                    scalar,
+                                    float(i + 2)))
         
       for var in variables:
         factory.tensor(var.tensor, self._tensorName(var))
-        factory.temporary(self._name(var), var.memoryLayout().requiredReals(), iniZero=True)
+        factory.temporary(self._name(var),
+                          var.memoryLayout().requiredReals(),
+                          iniZero=True)
         
         shape = var.memoryLayout().shape()
         cpp('{supportNS}::DenseTensorView<{dim},{arch.typename},{arch.uintTypename}> {viewName}({utName}, {{{shape}}}, {{{start}}}, {{{shape}}});'.format(
@@ -351,13 +358,23 @@ class UnitTestGenerator(KernelGenerator):
         )
         cpp.emptyline()
 
-      cpp( '{}::{} {};'.format(OptimisedKernelGenerator.NAMESPACE, kernelClass, self.KERNEL_VAR) )
-      for scalar in scalars:
-        cpp( '{0}.{1} = {1};'.format(self.KERNEL_VAR, scalar) )
-      for var in variables:
-        cpp( '{}.{}{} = {};'.format(self.KERNEL_VAR, var.tensor.baseName(), self._groupIndex(var), self._tensorName(var)) )
+      cpp('{}::{} {};'.format(OptimisedKernelGenerator.NAMESPACE,
+                              kernelClass,
+                              self.KERNEL_VAR))
 
-      cpp( '{}.{}();'.format(self.KERNEL_VAR, OptimisedKernelGenerator.EXECUTE_NAME + (str(index) if index is not None else '')) )
+      for scalar in scalars:
+        cpp('{0}.{1} = {1};'.format(self.KERNEL_VAR,
+                                    scalar))
+
+      for var in variables:
+        cpp('{}.{}{} = {};'.format(self.KERNEL_VAR,
+                                   var.tensor.baseName(),
+                                   self._groupIndex(var),
+                                   self._tensorName(var)))
+
+
+      cpp('{}.{}();'.format(self.KERNEL_VAR,
+                            OptimisedKernelGenerator.EXECUTE_NAME + (str(index) if index is not None else '')))
       cpp.emptyline()
 
       super().generate(cpp, cfg, factory, None, gemm_cfg)

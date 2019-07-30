@@ -58,5 +58,14 @@ class Description(object):
       self.assignLoopRanges = None
 
 def generator(arch, descr):
+  """TODO
+
+  Args:
+    arch (Architecture):
+    descr (log.Description):
+
+  Returns:
+
+  """
   return Generic(arch, descr)
 

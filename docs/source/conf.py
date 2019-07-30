@@ -49,10 +49,10 @@ extensions = [
     'sphinx.ext.coverage',
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
-    'sphinx.ext.coverage',
     'sphinx_autodoc_typehints',
     'sphinx.ext.graphviz',
-    'sphinxcontrib.plantuml'
+    'sphinxcontrib.plantuml',
+    'sphinx.ext.inheritance_diagram',
 ]
 
 '''

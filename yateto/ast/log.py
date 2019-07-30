@@ -6,10 +6,23 @@ def allSubstrings(s):
   L = len(s)
   return [s[i:j+1] for i in range(L) for j in range(i,L)]
 
-def splitByDistance(p):
-  L = len(p)
-  splits = [i+1 for x,y,i in zip(p[:-1], p[1:], range(L)) if y-x != 1]
-  return [p[i:j] for i,j in zip([0] + splits, splits + [L])]
+
+def splitByDistance(addresses):
+  """Splits non-contiguous addresses into chunks of contiguous ones
+
+  Args:
+    addresses (List[int]): non-contiguous addresses of a memory layout
+
+  Returns:
+    List[List[int]]: contiguous chunks of addresses
+  """
+  num_addresses = len(addresses)
+  splits = [counter + 1 for previous_address, next_address, counter
+            in zip(addresses[:-1], addresses[1:], range(num_addresses))
+            if next_address - previous_address != 1]
+
+  return [addresses[i:j] for i, j in zip([0] + splits, splits + [num_addresses])]
+
 
 def fusedVariants(memLayout, I, P, M, prune = False):
   D = list()

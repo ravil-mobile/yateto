@@ -83,14 +83,57 @@ class Architecture(object):
 
 
   def setTmpStackLimit(self, tmpStackLimit):
+    """Sets a stack size which is going to be assumed during the source code generation
+
+    NOTE: the stack size will affect on whether temporary buffers will be allocated
+          on heap or stack
+
+    Args:
+      tmpStackLimit (int): a size of stack
+    """
     self._tmpStackLimit = tmpStackLimit
 
 
   def alignedLower(self, index):
+    """Computes an appropriate lower value of a given index value suitable for vectorization
+       for a particular compute architecture
+
+    Args:
+      index (int): an index value of a range
+
+    Returns:
+      int: adjusted index value
+
+    Examples:
+      >>> from yateto.arch import Architecture
+      >>> arch = Architecture(name='hsw', precision='D', alignment=32)
+      >>> arch.alignedLower(index=4)
+      4
+      >>> arch.alignedLower(index=3)
+      0
+    """
     return index - index % self.alignedReals
 
 
   def alignedUpper(self, index):
+    """Computes an appropriate upper value of a given index value suitable for vectorization
+       for a particular compute architecture
+
+    Args:
+      index (int): an index value of a range
+
+    Returns:
+      int: adjusted index value
+
+    Examples:
+      >>> from yateto.arch import Architecture
+      >>> arch = Architecture(name='hsw', precision='D', alignment=32)
+      >>> arch.alignedUpper(index=12)
+      12
+      >>> arch.alignedUpper(index=13)
+      16
+
+    """
     return index + (self.alignedReals - index % self.alignedReals) % self.alignedReals
 
 
@@ -99,6 +142,17 @@ class Architecture(object):
 
 
   def checkAlignment(self, offset):
+    """Checks whether a given index (offset) is aligned with respect to a specific compute
+    architecture
+
+    NOTE: an index belong to a range which in its turn belongs to a tensor
+
+    Args:
+      offset (int): an index
+
+    Returns:
+      bool: True, if an index is aligned. Otherwise, False
+    """
     return offset % self.alignedReals == 0
 
 
@@ -107,6 +161,14 @@ class Architecture(object):
 
 
   def onHeap(self, numReals):
+    """Checks whether an array has to be allocated on heap
+
+    Args:
+      numReals (int): a size of an array
+
+    Returns:
+      bool: True, if an array has to be allocated on heap
+    """
     return (numReals * self.bytesPerReal) > self._tmpStackLimit
 
 

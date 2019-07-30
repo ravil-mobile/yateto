@@ -2,6 +2,8 @@ from ...ast.indices import Indices
 from ..common import *
 from .. import gemm
 
+from yateto.type import Tensor
+
 import re
 
 class Generic(object):
@@ -38,19 +40,31 @@ class Generic(object):
     temp_variable_name = re.compile(r'_tmp*')
     for name, term in terms.items():
 
+      """
       tensor_volume = 1
       indices_info = term.indices.size()
       for index_name, index_size in indices_info.items():
         tensor_volume *= index_size
+      """
 
       base_jump_name = "jump_to_next_"
       size = term.eqspp.size
       if not temp_variable_name.match(term.name):
-        size = "tensor::{}::jump_to_next".format(term.name)
+        size = "tensor::{}::jump_to_next".format(Tensor.getBaseName(term.name))
 
-      cpp("const {} {} = {};".format(self._arch.uintTypename,
-                                     base_jump_name + name,
-                                     size))
+        if Tensor.getGroup(term.name):
+          # in case if a tensor belongs to a tensor group
+          size = size + "[{}]".format(*Tensor.getGroup(term.name))
+
+        cpp("const {} {} = {};".format(self._arch.uintTypename,
+                                       base_jump_name + Tensor.getBaseName(term.name),
+                                       size))
+      else:
+        cpp("const {} {} = {};".format(self._arch.uintTypename,
+                                       base_jump_name + term.name,
+                                       size))
+
+
     cpp.emptyline()
 
 
@@ -81,6 +95,15 @@ class Generic(object):
 
 
   def generate(self, cpp, routineCache, gemm_cfg):
+    """
+    Args:
+      cpp: a file descriptor
+      routineCache (RoutineCache):
+      gemm_cfg (GeneratorCollection):
+
+    Returns:
+
+    """
     descr = self._descr
 
 
@@ -219,6 +242,9 @@ class Generic(object):
                                     tensor_descriptions=descr)
 
         """
+
+        #TODO: find another way to surround a block of code with curly brackets
+        cpp('{}'.format('{' if descr.is_cuda_factory_used else ''))
         if descr.assignLoopRanges is not None:
           gemmDescr.setBeta(0.0)
           flops += forLoops(cpp=cpp,
@@ -234,6 +260,7 @@ class Generic(object):
                             ranges=descr.addLoopRanges,
                             body=LoGBody(),
                             pragmaSimd=False)
+        cpp('{}'.format('}' if descr.is_cuda_factory_used else ''))
 
         return flops
 

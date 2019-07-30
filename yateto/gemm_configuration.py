@@ -93,6 +93,8 @@ class BLIS(BLASlike):
     return '{} {}({});'.format(init, self.operation_name, ', '.join(str(p) for p in parameters))
 
 
+from yateto.type import Tensor
+import re
 class SeissolCudaBlas(BLASlike):
   def __init__(self, arch):
     """
@@ -103,6 +105,15 @@ class SeissolCudaBlas(BLASlike):
                      includes=['cuda_utils.cuh'])
 
   def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC):
+
+
+    # TODO: check how it works with multiple simulations
+    temp_variable_name = re.compile(r'_tmp*')
+
+    jump_name_A = A if temp_variable_name.match(A) else Tensor.getBaseName(A)
+    jump_name_B = B if temp_variable_name.match(B) else Tensor.getBaseName(B)
+    jump_name_C = C if temp_variable_name.match(C) else Tensor.getBaseName(C)
+
     parameters = [
       'CblasColMajor',
       self.bool2Trans(transA),
@@ -111,9 +122,9 @@ class SeissolCudaBlas(BLASlike):
       alpha, A, ldA,
       B, ldB,
       beta, C, ldC,
-      "jump_to_next_{}".format(A),
-      "jump_to_next_{}".format(B),
-      "jump_to_next_{}".format(C),
+      "jump_to_next_{}".format(jump_name_A),
+      "jump_to_next_{}".format(jump_name_B),
+      "jump_to_next_{}".format(jump_name_C),
       "tensor::num_elements_in_cluster"]
     print("we've found an entry point")
     return '{}({});'.format(self.operation_name, ', '.join(str(p) for p in parameters))

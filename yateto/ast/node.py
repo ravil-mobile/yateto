@@ -359,9 +359,16 @@ class BinOp(Op):
     super().__init__(lTerm, rTerm)
   
   def leftTerm(self):
+    """
+    Returns (Type[Node]): a left child of a local subtree i.e. a left operand
+    """
     return self._children[0]
   
   def rightTerm(self):
+    """
+    Returns (Type[Node]): a right child of a local subtree i.e. a right operand
+
+    """
     return self._children[1]
   
   def setChildren(self, children):
@@ -443,6 +450,7 @@ class Contraction(BinOp):
     assert len(spps) == 2
     return _productContractionLoGSparsityPattern(self, *spps)
 
+
 class LoopOverGEMM(BinOp):
   def __init__(self, indices, aTerm, bTerm, m, n, k):
     super().__init__(aTerm, bTerm)
@@ -476,6 +484,10 @@ class LoopOverGEMM(BinOp):
     return cost
   
   def loopIndices(self):
+    """ TODO
+    Returns:
+      Indices: TODO
+    """
     i1 = self.indices - (self._m + self._n)
     i2 = (self.leftTerm().indices - (self._m + self._k)) - i1
     i3 = ((self.rightTerm().indices - (self._k + self._n)) - i1) - i2

@@ -3,6 +3,7 @@ import numpy.lib
 import re
 from abc import ABC, abstractmethod
 
+
 class ASpp(ABC):
   def __init__(self, shape):
     """
@@ -71,11 +72,27 @@ class dense(ASpp):
     """
     Returns:
       List[Tuple[int, int]]: max and min index along each dimension of a tensor
+
+    Examples:
+      >>> from yateto.aspp import dense
+      >>> instance = dense(shape=(3,4,4))
+      >>> instance.nnzbounds()
+      [(0, 2), (0, 3), (0, 3)]
     """
     return [(0, size - 1) for size in self.shape]
 
 
   def nonzero(self):
+    """Returns indices of non-zeros elements of a tensor
+
+    Returns:
+      np.array: a multidimensional array
+    Examples:
+      >>> from yateto.aspp import dense
+      >>> instance = dense(shape=(2,2))
+      >>> instance.nonzero()
+      (array([0, 0, 1, 1]), array([0, 1, 0, 1]))
+    """
     return np.ones(self.shape, dtype=bool, order=general.NUMPY_DEFAULT_ORDER).nonzero()
 
 

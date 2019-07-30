@@ -175,9 +175,8 @@ class DetermineLocalInitialization(object):
         # compute memory size which is needed to hold a result of an expression in reals
         needed_buffer_size = program_action.result.memoryLayout().requiredReals()
 
-
         if current_buffer_index in buffer_size_table:
-          privious_buffer_size = buffer_size_table[current_buffer_index],
+          privious_buffer_size = buffer_size_table[current_buffer_index]
           buffer_size_table[current_buffer_index] = max(privious_buffer_size,
                                                         needed_buffer_size)
         else:

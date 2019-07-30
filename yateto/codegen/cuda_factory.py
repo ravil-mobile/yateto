@@ -96,7 +96,7 @@ class CudaKernelFactory(object):
     self._cpp('// allocating temp memory only on gpu')
     self._cpp('{0} *{1};'.format(self._arch.typename, buffer_name))
 
-    total_buffer_volume = "{} * tensor::num_elements_in_cluster".format(buffer_size)
+    total_buffer_volume = "{} * yateto::tensor::num_elements_in_cluster".format(buffer_size)
     self._cpp('cudaMalloc(&{0}, sizeof({1}) * {2}); CUDA_CHECK;'.format(buffer_name,
                                                                         self._arch.typename,
                                                                         total_buffer_volume))
@@ -126,7 +126,30 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
     """
     super().__init__(cpp, arch)
 
-  def create_LoopOverGEMM(self, node, result, arguments, add, scalar, prefetchName, routineCache, gemm_cfg):
+  def create_LoopOverGEMM(self,
+                          node,
+                          result,
+                          arguments,
+                          add,
+                          scalar,
+                          prefetchName,
+                          routineCache,
+                          gemm_cfg):
+    """TODO
+
+    Args:
+      node (Type[Node]):
+      result (Variable):
+      arguments (List[Varaible]):
+      add (bool):
+      scalar (Union[float, Scalar, None]):
+      prefetchName (Union[str, None]):
+      routineCache (RoutineCache):
+      gemm_cfg (GeneratorCollection):
+
+    Returns:
+      TODO:
+    """
     assert len(arguments) == 2
     description = log.Description(
       alpha=scalar,
@@ -141,12 +164,10 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
       is_cuda_factory_used=isinstance(self, CudaKernelFactory)
     )
 
-    print("debug")
-    print(isinstance(self, CudaKernelFactory))
-
     generator = log.generator(self._arch, description)
     return generator.generate(self._cpp, routineCache, gemm_cfg)
-  
+
+
   def create_IndexSum(self, node, result, arguments, add, scalar, prefetchName, routineCache, gemm_cfg):
     assert len(arguments) == 1
     description = indexsum.Description(alpha=scalar,
@@ -177,14 +198,23 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
       # TODO: this part of the code must be generilized
       # in case of the user wants to perform scalar-tensor
       # multiplication with just one tensor
-      sparcity_pattern = term.eqspp()
-      tensor_volume = "{} * tensor::num_elements_in_cluster".format(sparcity_pattern.size)
 
-      # generate cuda call for scalar tensor produc
-      self._cpp('cuda_scalar_tensor_mult({}, {}, {}, {});'.format(scalar,
-                                                                  term.name,
-                                                                  result.name,
-                                                                  tensor_volume))
+      tensor_volume = term.memoryLayout().requiredReals()
+      tensor_volume_as_str = "{} * tensor::num_elements_in_cluster".format(tensor_volume)
+
+
+      if add:
+        # generate cuda call for scalar tensor product
+        self._cpp('cuda_scalar_tensor_mult_add({}, {}, {}, {});'.format(scalar,
+                                                                        term.name,
+                                                                        result.name,
+                                                                        tensor_volume_as_str))
+      else:
+        # generate cuda call for scalar tensor product
+        self._cpp('cuda_scalar_tensor_mult({}, {}, {}, {});'.format(scalar,
+                                                                    term.name,
+                                                                    result.name,
+                                                                    tensor_volume_as_str))
       self._cpp.emptyline()
     # TODO: return a number of flop
     return 0
@@ -280,16 +310,9 @@ class CudaUnitTestFactory(CudaKernelFactory):
     isDense = spp.count_nonzero() == size
     if isDense:
       self.temporary(cpu_result_name, size)
-      self.cuda_temporary(cuda_result_name, size)
 
       with self._cpp.For('int i = 0; i < {}; ++i'.format(size)):
         self._cpp('{}[i] = static_cast<{}>(i % {} + 1);'.format(resultName, self._arch.typename, maxValue))
-
-      # copy data on GPU
-      self._cpp('cudaMemcpy({0}, {1}, sizeof({2}) * {3},  cudaMemcpyHostToDevice); CUDA_CHECK;'.format(cuda_result_name,
-                                                                                                       cpu_result_name,
-                                                                                                       self._arch.typename,
-                                                                                                       size))
 
 
     else:
@@ -301,3 +324,12 @@ class CudaUnitTestFactory(CudaKernelFactory):
       self.temporary(resultName, size, memory=memory)
 
 
+    # copy data on GPU
+    self.cuda_temporary(cuda_result_name, size)
+    self._cpp(
+      'cudaMemcpy({0}, {1}, sizeof({2}) * {3} \
+      * yateto::tensor::num_elements_in_cluster, cudaMemcpyHostToDevice); CUDA_CHECK;'.format(
+        cuda_result_name,
+        cpu_result_name,
+        self._arch.typename,
+        size))
