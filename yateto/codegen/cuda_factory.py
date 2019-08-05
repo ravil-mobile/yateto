@@ -5,6 +5,7 @@ from ..memory import DenseMemoryLayout
 from .common import forLoops, TensorDescription, IndexedTensorDescription
 from . import copyscaleadd, indexsum, log, product
 from functools import reduce
+from yateto.type import Tensor
 
 
 class CudaKernelFactory(object):
@@ -13,7 +14,7 @@ class CudaKernelFactory(object):
   def __init__(self, cpp, arch):
     """
     Args:
-      cpp (TODO): a file descriptor
+      cpp (IO): a file stream
       arch (Architecture): TODO
     """
     self._cpp = cpp
@@ -121,7 +122,7 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
   def __init__(self, cpp, arch):
     """
     Args:
-      cpp (TODO): a file descriptor
+      cpp (IO): a file stream
       arch (Architecture): TODO
     """
     super().__init__(cpp, arch)
@@ -138,14 +139,14 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
     """TODO
 
     Args:
-      node (Type[Node]):
-      result (Variable):
-      arguments (List[Varaible]):
-      add (bool):
-      scalar (Union[float, Scalar, None]):
-      prefetchName (Union[str, None]):
-      routineCache (RoutineCache):
-      gemm_cfg (GeneratorCollection):
+      node (Type[Node]): TODO
+      result (Variable): TODO
+      arguments (List[Varaible]): TODO
+      add (bool): TODO
+      scalar (Union[float, Scalar, None]): TODO
+      prefetchName (Union[str, None]): TODO
+      routineCache (RoutineCache): TODO
+      gemm_cfg (GeneratorCollection): TODO
 
     Returns:
       TODO:
@@ -192,32 +193,45 @@ class CudaOptimisedKernelFactory(CudaKernelFactory):
 
 
   def simple(self, result, term, add, scalar, routineCache):
-    if scalar and scalar != 1.0:
+    """Prepares data to generate a tensor equation in a form: B = beta * B + alpha * A
 
-      # compute the total volume of tensors to multiply by a scalar
-      # TODO: this part of the code must be generilized
-      # in case of the user wants to perform scalar-tensor
-      # multiplication with just one tensor
+        Args:
+          result (Variable):
+          term (Variable):
+          add (bool): enables or disables the first term of the lhs
+          scalar (Union[Scalar, float]):
+          routineCache:
 
-      tensor_volume = term.memoryLayout().requiredReals()
-      tensor_volume_as_str = "{} * tensor::num_elements_in_cluster".format(tensor_volume)
+        Returns:
+          int: a theoretical number of floating point operation required for a generated part of code
+        """
+
+    # prepare descriptions of each term
+    beta = 1.0 if add else 0.0
+    rhs_description = IndexedTensorDescription(name=str(result),
+                                               indices=self._indices(result),
+                                               memoryLayout=result.memoryLayout(),
+                                               eqspp=result.eqspp())
+
+    lhs_description = IndexedTensorDescription(name=str(term),
+                                               indices=self._indices(term),
+                                               memoryLayout=term.memoryLayout(),
+                                               eqspp=term.eqspp())
+
+    # prepare a description of a tensor operation
+    description = copyscaleadd.Description(alpha=scalar,
+                                           beta=beta,
+                                           result=rhs_description,
+                                           term=lhs_description)
 
 
-      if add:
-        # generate cuda call for scalar tensor product
-        self._cpp('cuda_scalar_tensor_mult_add({}, {}, {}, {});'.format(scalar,
-                                                                        term.name,
-                                                                        result.name,
-                                                                        tensor_volume_as_str))
-      else:
-        # generate cuda call for scalar tensor product
-        self._cpp('cuda_scalar_tensor_mult({}, {}, {}, {});'.format(scalar,
-                                                                    term.name,
-                                                                    result.name,
-                                                                    tensor_volume_as_str))
-      self._cpp.emptyline()
-    # TODO: return a number of flop
-    return 0
+    generator = copyscaleadd.produce_cuda_generator(self._arch, description)
+
+    # generate a piece of the source code
+    # and count the number of floating point operations
+    # for this part of the code
+    return generator.generate(self._cpp, routineCache)
+
 
 class CudaUnitTestFactory(CudaKernelFactory):
   def __init__(self, cpp, arch, nameFun):

@@ -49,19 +49,38 @@ class KernelFactory(object):
         ini = ' = {{{}}}'.format(', '.join(memory))
       self._cpp('{} {}[{}] __attribute__((aligned({}))){};'.format(self._arch.typename, bufname, size, self._arch.alignment, ini))
 
+
   def freeTmp(self):
     for free in self._freeList:
       self._cpp('free({});'.format(free))
     self._freeList = []
 
+
   def _indices(self, var):
-    """TODO
+    """Renames indices of a tensor in alphabetical order
+
+    NOTE: renamed indices are used for local computation within a generated source code
 
     Args:
-      var (Variable): TODO
+      var (Variable): a unit of an execution block (usually a tensor)
 
     Returns:
-      Indices: TODO
+      Indices: renamed tensor indices
+
+    Examples:
+      >>> from yateto.memory import DenseMemoryLayout
+      >>> tensor_shape = (4,3)
+      >>> layout = DenseMemoryLayout(shape=tensor_shape)
+      >>> from yateto.controlflow.graph import Variable
+      >>> variable = Variable(name='Tensor', writable=True, memoryLayout=layout)
+      >>> from yateto.arch import Architecture
+      >>> arch = Architecture(name='hsw', precision='D', alignment=32)
+      >>> from io import StringIO
+      >>> from yateto.codegen.factory import KernelFactory
+      >>> factory = KernelFactory(cpp=StringIO(), arch=arch)
+      >>> factory._indices(variable)
+      (a=4,b=3)
+
     """
     shape = var.memoryLayout().shape()
     return Indices(string.ascii_lowercase[:len(shape)], shape)
@@ -109,15 +128,46 @@ class OptimisedKernelFactory(KernelFactory):
     )
     generator = product.generator(self._arch, description)
     return generator.generate(self._cpp, routineCache)
-  
+
+
   def simple(self, result, term, add, scalar, routineCache):
-    description = copyscaleadd.Description(
-      alpha = scalar,
-      beta = 1.0 if add else 0.0,
-      result = IndexedTensorDescription(str(result), self._indices(result), result.memoryLayout(), result.eqspp()),
-      term = IndexedTensorDescription(str(term), self._indices(term), term.memoryLayout(), term.eqspp())
-    )
+    """Prepares data to generate a tensor equation in a form: B = beta * B + alpha * A
+
+    Args:
+      result (Variable):
+      term (Variable):
+      add (bool): enables or disables the first term of the lhs
+      scalar (Union[Scalar, float]):
+      routineCache:
+
+    Returns:
+      int: a theoretical number of floating point operation required for a generated part of code
+    """
+
+    # prepare descriptions of each term
+    beta = 1.0 if add else 0.0
+    rhs_description = IndexedTensorDescription(name=str(result),
+                                               indices=self._indices(result),
+                                               memoryLayout=result.memoryLayout(),
+                                               eqspp=result.eqspp())
+
+    lhs_description = IndexedTensorDescription(name=str(term),
+                                               indices=self._indices(term),
+                                               memoryLayout=term.memoryLayout(),
+                                               eqspp=term.eqspp())
+
+    # prepare a description of a tensor operation
+    description = copyscaleadd.Description(alpha=scalar,
+                                           beta=beta,
+                                           result=rhs_description,
+                                           term=lhs_description)
+
+    # init a code generation subroutine
     generator = copyscaleadd.generator(self._arch, description)
+
+    # generate a piece of the source code
+    # and count the number of floating point operations
+    # for this part of the code
     return generator.generate(self._cpp, routineCache)
 
 
@@ -158,12 +208,18 @@ class UnitTestFactory(KernelFactory):
 
 
   def simple(self, result, term, add, scalar, routineCache):
-    """TODO
+    """Prepares data to generate a tensor equation in a form: B = beta * B + alpha * A, for unit
+    testing
+
+    TODO: Check the description above
+
+    NOTE: some data of the right hand side can be partially used for computations
+    on the hand left side
 
     Args:
-      result (Variable): TODO
-      term (Variable): TODO
-      add (bool): TODO
+      result (Variable): right hand side of an equation
+      term (Variable): left habd side of an equation
+      add (bool): enables or disables the first term of the lhs
       scalar (Union[Scalar, float, None]): TODO
       routineCache (Union[None, RoutineCache]): TODO
 

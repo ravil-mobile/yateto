@@ -547,10 +547,6 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
                                var.memoryLayout().requiredReals(),
                                iniZero=True)
 
-        print("DEbUG: Name={}; Tensor={}; Var={}".format(str(var),
-                                                         var.tensor.memoryLayout().requiredReals(),
-                                                         var.memoryLayout().requiredReals()))
-
         shape = var.memoryLayout().shape()
         cpp('{supportNS}::DenseTensorView<{dim},{arch.typename},{arch.uintTypename}> {viewName}({utName}, {{{shape}}}, {{{start}}}, {{{shape}}});'.format(
             supportNS = SUPPORT_LIBRARY_NAMESPACE,

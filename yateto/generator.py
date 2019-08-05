@@ -914,13 +914,15 @@ class CudaGenerator(object):
       family.prepareUntilCodeGen(costEstimator)
 
 
-    # render and save all optimized parse trees in image files
-    parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-optimized')
-    for kernel in self.kernels():
-      parse_tree_visuzlizer.visualize(tree_name=kernel.name,
-                                      tree_root=kernel.ast[0],
-                                      is_display=False)
-
+    #TODO: the following block is needed for rendering parse trees
+    debug = False
+    if debug:
+      # render and save all optimized parse trees in image files
+      parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-optimized')
+      for kernel in self.kernels():
+        parse_tree_visuzlizer.visualize(tree_name=kernel.name,
+                                        tree_root=kernel.ast[0],
+                                        is_display=False)
 
 
     ################################################################################################

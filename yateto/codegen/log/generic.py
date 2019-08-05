@@ -26,46 +26,42 @@ class Generic(object):
 
 
 
-  def _generate_tensors_jumps(self,
-                              cpp,
-                              target_name_A,
-                              target_name_B,
-                              target_name_C,
-                              tensor_descriptions):
+  def _generate_tensors_jumps(self, cpp, tensor_descriptions):
 
-    terms = {target_name_A: tensor_descriptions.leftTerm,
-             target_name_B: tensor_descriptions.rightTerm,
-             target_name_C: tensor_descriptions.result}
+    terms = {"A": tensor_descriptions.leftTerm,
+             "B": tensor_descriptions.rightTerm,
+             "C": tensor_descriptions.result}
+
+    jump_table = {}
 
     temp_variable_name = re.compile(r'_tmp*')
-    for name, term in terms.items():
+    base_jump_name = "jump_to_next_"
+    for label, term in terms.items():
 
-      """
-      tensor_volume = 1
-      indices_info = term.indices.size()
-      for index_name, index_size in indices_info.items():
-        tensor_volume *= index_size
-      """
-
-      base_jump_name = "jump_to_next_"
       size = term.eqspp.size
       if not temp_variable_name.match(term.name):
         size = "tensor::{}::jump_to_next".format(Tensor.getBaseName(term.name))
 
         if Tensor.getGroup(term.name):
+
           # in case if a tensor belongs to a tensor group
           size = size + "[{}]".format(*Tensor.getGroup(term.name))
 
         cpp("const {} {} = {};".format(self._arch.uintTypename,
                                        base_jump_name + Tensor.getBaseName(term.name),
                                        size))
+        jump_table[label] = base_jump_name + Tensor.getBaseName(term.name)
       else:
         cpp("const {} {} = {};".format(self._arch.uintTypename,
                                        base_jump_name + term.name,
                                        size))
 
+        jump_table[label] = base_jump_name + term.name
+
 
     cpp.emptyline()
+
+    return jump_table
 
 
   def _alignedStart(self, term, loopIndices):
@@ -97,7 +93,7 @@ class Generic(object):
   def generate(self, cpp, routineCache, gemm_cfg):
     """
     Args:
-      cpp: a file descriptor
+      cpp (IO): a file stream
       routineCache (RoutineCache):
       gemm_cfg (GeneratorCollection):
 
@@ -193,15 +189,15 @@ class Generic(object):
                           loopIndices=descr.innerLoopIndices)
 
         if descr.is_cuda_factory_used:
-          self._generate_tensors_jumps(cpp=cpp,
-                                       target_name_A=innerAname,
-                                       target_name_B=innerBname,
-                                       target_name_C=innerCname,
-                                       tensor_descriptions=descr)
+          # NOTE: jump table is needed for GPU based GEMM generator
+          jump_table = self._generate_tensors_jumps(cpp=cpp,
+                                                    tensor_descriptions=descr)
+        else:
+          jump_table = None
 
 
         generator = gemm.generator(self._arch, gemmDescr, gemm_cfg)
-        return generator.generate(cpp, routineCache)
+        return generator.generate(cpp, routineCache, additional=jump_table)
 
 
     class InnerLoopBody(object):
