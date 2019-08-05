@@ -39,7 +39,7 @@ class BLASlike(GemmTool):
   def bool2Trans(self, trans):
     return 'Cblas{}Trans'.format('' if trans else 'No')
 
-  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC):
+  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC, additional=None):
     parameters = [
       'CblasColMajor',
       self.bool2Trans(transA),
@@ -81,7 +81,7 @@ class BLIS(BLASlike):
   def bool2Trans(self, trans):
     return 'BLIS{}TRANSPOSE'.format('_' if trans else '_NO_'),
 
-  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC):
+  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC, additional=None):
     init = '_blis_alpha = {}; _blis_beta = {};'.format(alpha, beta)
     parameters = [
       self.bool2Trans(transA),
@@ -102,17 +102,9 @@ class SeissolCudaBlas(BLASlike):
                          about a target compute architecture
     """
     super().__init__(operation_name='cuda_blas_gemm'.format(arch.precision.lower()),
-                     includes=['cuda_utils.cuh'])
+                     includes=['device_utils.h'])
 
-  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC):
-
-
-    # TODO: check how it works with multiple simulations
-    temp_variable_name = re.compile(r'_tmp*')
-
-    jump_name_A = A if temp_variable_name.match(A) else Tensor.getBaseName(A)
-    jump_name_B = B if temp_variable_name.match(B) else Tensor.getBaseName(B)
-    jump_name_C = C if temp_variable_name.match(C) else Tensor.getBaseName(C)
+  def call(self, transA, transB, M, N, K, alpha, A, ldA, B, ldB, beta, C, ldC, additional=None):
 
     parameters = [
       'CblasColMajor',
@@ -122,11 +114,11 @@ class SeissolCudaBlas(BLASlike):
       alpha, A, ldA,
       B, ldB,
       beta, C, ldC,
-      "jump_to_next_{}".format(jump_name_A),
-      "jump_to_next_{}".format(jump_name_B),
-      "jump_to_next_{}".format(jump_name_C),
+      additional["A"],
+      additional["B"],
+      additional["C"],
       "tensor::num_elements_in_cluster"]
-    print("we've found an entry point")
+
     return '{}({});'.format(self.operation_name, ', '.join(str(p) for p in parameters))
 
 

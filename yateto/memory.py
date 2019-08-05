@@ -264,17 +264,59 @@ class DenseMemoryLayout(MemoryLayout):
     return size
 
 
-  def addressString(self, indices, I = None):
-    if I is None:
-      I = set(indices)
-    positions = indices.positions(I)
-    a = list()
-    for p in positions:
-      if self._bbox[p].start != 0:
-        a.append('{}*({}-{})'.format(self._stride[p], indices[p], self._bbox[p].start))
+  def addressString(self, indices, specific_names=None):
+    """Generate a string with a linearized address within a tensor for a source code
+
+    NOTE: it is widely used inside of nested for-loops. Renamed indices are iterable variables of
+    nested for-loops
+
+    Args:
+      indices (Indices): a description of tensor indices
+      specific_names (Optional[str]): TODO
+
+    Returns:
+      str: a linearized address of a tensor within a source code
+
+    Examples:
+      >>> from yateto.memory import DenseMemoryLayout
+      >>> tensor_shape = (5, 6)
+      >>> memory_layout = DenseMemoryLayout(shape=tensor_shape)
+      >>> from yateto.ast.indices import Indices
+      >>> indices = Indices(indexNames='ab', shape=(5, 6))
+      >>> memory_layout.addressString(indices)
+      '1*a + 5*b'
+
+      >>> from yateto.memory import DenseMemoryLayout
+      >>> tensor_shape = (5, 6)
+      >>> memory_layout = DenseMemoryLayout(shape=tensor_shape)
+      >>> from yateto.ast.indices import Indices
+      >>> indices = Indices(indexNames='ab', shape=(5, 6))
+      >>> memory_layout.addressString(indices, specific_names='b')
+      '5*b'
+
+    """
+
+    # extract names of renamed indices of an instance of Indices
+    if specific_names is None:
+      names = set(indices)
+    else:
+      names = specific_names
+
+    positions = indices.positions(names)
+
+    address_parts = list()
+    for index_position in positions:
+
+      if self._bbox[index_position].start != 0:
+        address_parts.append('{}*({}-{})'.format(self._stride[index_position],
+                                                 indices[index_position],
+                                                 self._bbox[index_position].start))
       else:
-        a.append('{}*{}'.format(self._stride[p], indices[p]))
-    return ' + '.join(a)
+        address_parts.append('{}*{}'.format(self._stride[index_position],
+                                            indices[index_position]))
+
+    address = ' + '.join(address_parts)
+    return address
 
 
   def isAlignedAddressString(self, indices, I = None):

@@ -659,18 +659,15 @@ class CudaGenerator(object):
   class FileNames(object):
     HEADER = 'h'
     CPP = 'cpp'
-    CUDA_SRC = 'cu'
 
     def __init__(self, outputDir, name):
       # names of header, source, cuda_source files
       self.hName = '{}.{}'.format(name, self.HEADER)
       self.cppName = '{}.{}'.format(name, self.CPP)
-      self.cudaSrcName = '{}.{}'.format(name, self.CUDA_SRC)
 
       # paths to the source files
       self.h = os.path.join(outputDir, self.hName)
       self.cpp = os.path.join(outputDir, self.cppName)
-      self.cu = os.path.join(outputDir, self.cudaSrcName)
 
 
   def __init__(self, arch):
@@ -872,14 +869,14 @@ class CudaGenerator(object):
 
 
     # generate the source files for the kernel test suite
-    with Cpp(fUT.cu) as unit_test_source:
+    with Cpp(fUT.cpp) as unit_test_source:
       # specify all necessary hedear files which the unit tests depend on
       unit_test_source.includeSys('cxxtest/TestSuite.h')
       unit_test_source.include(fUT.hName)
       unit_test_source.include(fInit.hName)
       unit_test_source.include(fKernels.hName)
       unit_test_source.include(fTensors.hName)
-      unit_test_source.include("cuda_utils.cuh")
+      unit_test_source.include("device_utils.h")
       unit_test_source.include('Util.h')
       unit_test_source.include('TensorView.h')
 
@@ -914,13 +911,15 @@ class CudaGenerator(object):
       family.prepareUntilCodeGen(costEstimator)
 
 
-    # render and save all optimized parse trees in image files
-    parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-optimized')
-    for kernel in self.kernels():
-      parse_tree_visuzlizer.visualize(tree_name=kernel.name,
-                                      tree_root=kernel.ast[0],
-                                      is_display=False)
-
+    #TODO: the following block is needed for rendering parse trees
+    debug = True
+    if debug:
+      # render and save all optimized parse trees in image files
+      parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-optimized')
+      for kernel in self.kernels():
+        parse_tree_visuzlizer.visualize(tree_name=kernel.name,
+                                        tree_root=kernel.ast[0],
+                                        is_display=False)
 
 
     ################################################################################################
@@ -967,7 +966,7 @@ class CudaGenerator(object):
 
       kernelSourceContent = kernelSource.getvalue()
 
-    with Cpp(fKernels.cu) as cpp:
+    with Cpp(fKernels.cpp) as cpp:
       for gemm_tool in gemm_cfg.selected:
 
         for inc in gemm_tool.includes:

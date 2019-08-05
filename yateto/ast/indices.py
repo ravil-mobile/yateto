@@ -4,16 +4,15 @@ from .. import aspp
 
 
 class Indices(object):
-  def __init__(self, indexNames: str = '', shape: tuple = ()):
-    """TODO: complete description
-
+  def __init__(self, indexNames='', shape=()):
+    """
     Args:
-      indexNames: each character of a string defines a name of the corresponding index
-      shape: shape of the tensor i.e. sizes of each dimension
+      indexNames (str): names of tensor indices
+      shape (Tuple[int, ...]): shape of a tensor i.e. sizes of each dimension
     """
 
-    self._indices = tuple(indexNames)
-    self._size = dict()
+    self._indices = tuple(indexNames)  # type: Tuple[str]
+    self._size = dict()  # type: Dict[str, int]
     
     assert len(self._indices) == len(set(self._indices)), 'Repeated indices are not allowed ({}).'.format(indexNames)
     assert len(self._indices) == len(shape), 'Indices {} do not match tensor shape {}.'.format(str(self), shape)
@@ -47,15 +46,45 @@ class Indices(object):
     return Indices(indexNames, self.subShape(indexNames))
     
   def find(self, index):
+    """Computes the order of an index based on its name
+
+    Args:
+      index (str): a name of an index
+
+    Returns:
+      int: the order of an index
+
+    Examples:
+      >>> from yateto.ast.indices import Indices
+      >>> indices = Indices(indexNames='ij', shape=(3,4))
+      >>> indices.find('j')
+      1
+    """
     assert len(index) == 1
     return self._indices.index(index)
-  
-  def positions(self, I, sort=True):
-    pos = [self.find(i) for i in I]
+
+
+  def positions(self, names, sort=True):
+    """Computes original positions of indices
+
+    Args:
+      names (Set[str]): names of indices
+      sort (bool):
+
+    Returns:
+      List[int]: list of positions of indices
+    """
+
+    # find positions of indices based on provided names
+    positions_of_indices = [self.find(name) for name in names]
+
+    # sort positions if it is needed
     if sort:
-      return sorted(pos)
-    return pos
-  
+      return sorted(positions_of_indices)
+
+    return positions_of_indices
+
+
   def __eq__(self, other):
     return other != None and self._indices == other._indices and self._size == other._size
     
@@ -73,11 +102,37 @@ class Indices(object):
     
   def __len__(self):
     return len(self._indices)
-  
+
+
   def __and__(self, other):
+    """Computes common indices
+
+    Args:
+      other (Indices): another instance of the class
+
+    Returns:
+      Set[str]: a set of common indices of two instances
+
+    Examples:
+      >>> from yateto.ast.indices import Indices
+      >>> indices_1 = Indices(indexNames='ij', shape=(3,4))
+      >>> indices_2 = Indices(indexNames='mi', shape=(6,3))
+      >>> indices_1 & indices_2
+      {'i'}
+    """
     return set(self) & set(other)
-  
+
+
   def __rand__(self, other):
+    """See description of 'self.__and__'
+
+    Args:
+      other (Indices): another instance of the class
+
+    Returns:
+      Set[str]: a set of common indices of two instances
+
+    """
     return self & other
     
   def __le__(self, other):

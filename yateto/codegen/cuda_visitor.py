@@ -547,10 +547,6 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
                                var.memoryLayout().requiredReals(),
                                iniZero=True)
 
-        print("DEbUG: Name={}; Tensor={}; Var={}".format(str(var),
-                                                         var.tensor.memoryLayout().requiredReals(),
-                                                         var.memoryLayout().requiredReals()))
-
         shape = var.memoryLayout().shape()
         cpp('{supportNS}::DenseTensorView<{dim},{arch.typename},{arch.uintTypename}> {viewName}({utName}, {{{shape}}}, {{{start}}}, {{{shape}}});'.format(
             supportNS = SUPPORT_LIBRARY_NAMESPACE,
@@ -607,13 +603,12 @@ class CudaUnitTestGenerator(CudaKernelGenerator):
             size_in_bytes = "sizeof({0}) * {1}".format(self._arch.typename,
                                                        size)
 
-            function_params = "{0}, {1}, {2}, {3}".format(self._tensorName(var),
-                                                          self._get_gpu_tensor_name(var),
-                                                          size_in_bytes,
-                                                          "cudaMemcpyDeviceToHost")
+            function_params = "(void*){0}, (void*){1}, {2}".format(self._tensorName(var),
+                                                                   self._get_gpu_tensor_name(var),
+                                                                   size_in_bytes)
 
-            cpp('cudaMemcpy({}); CUDA_CHECK;'.format(function_params))
-          cpp('cudaFree({}); CUDA_CHECK;'.format(self._get_gpu_tensor_name(var)))
+            cpp('device_copy_from({});'.format(function_params))
+          cpp('device_free((void*){});'.format(self._get_gpu_tensor_name(var)))
 
 
       cpp.emptyline()

@@ -28,7 +28,7 @@ class GemmGen(object):
       return '{} + {}'.format(term.name, o)
     return term.name
     
-  def generate(self, cpp, routineCache):
+  def generate(self, cpp, routineCache, additional=None):
     d = self._descr
     m, n, k = d.mnk()
     ldA = 0 if d.isACsc else d.leftTerm.memoryLayout.stridei(1)
@@ -68,7 +68,8 @@ class GemmGen(object):
                               ldB,
                               d.beta,
                               self._pointer(d.result, (m.start, n.start), False),
-                              ldC))
+                              ldC,
+                              additional))
 
     else:
       assert not (d.transA or d.transB)

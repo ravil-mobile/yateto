@@ -5,7 +5,7 @@ class Generic(object):
     self._arch = arch
     self._descr = descr
 
-  def generate(self, cpp, routineCache):
+  def generate(self, cpp, routineCache, additional=None):
     d = self._descr
         
     if not d.add:

@@ -115,7 +115,7 @@ with Cpp(os.path.join(outDir, 'trashTheCache.cpp')) as cpp:
 
 
 # generate the main file which contains the entry point
-with Cpp(os.path.join(outDir, 'performance.cu')) as cpp:
+with Cpp(os.path.join(outDir, 'performance.cpp')) as cpp:
 
   # generate includes
   cpp.includeSys('cstdlib')
@@ -125,7 +125,7 @@ with Cpp(os.path.join(outDir, 'performance.cu')) as cpp:
   cpp.include('tensor.h')
   cpp.include('Stopwatch.h')
   cpp.include('Util.h')
-  cpp.include('cuda_utils.cuh')
+  cpp.include('device_utils.h')
 
   cpp('using namespace yateto;')
   cpp.functionDeclaration('trashTheCache', arguments='double* trash, int size')
@@ -169,7 +169,7 @@ with Cpp(os.path.join(outDir, 'performance.cu')) as cpp:
 
         for key, tensor in tensors:
           gpu_arrayName = formatArrayCudaName(tensor)
-          cpp('cudaMalloc(&{0}, tensor::{1}::size({2}) * sizeof(real)); CUDA_CHECK;'.format(
+          cpp('device_malloc((void**)&{0}, tensor::{1}::size({2}) * sizeof(real));'.format(
                 gpu_arrayName,
                 tensor.baseName(),
                 formatGroup(tensor)))
@@ -187,11 +187,10 @@ with Cpp(os.path.join(outDir, 'performance.cu')) as cpp:
         for key, tensor in tensors:
           gpu_arrayName = formatArrayCudaName(tensor)
           cpu_arrayName = formatArrayName(tensor)
-          cpp('cudaMemcpy({0}, {1}, tensor::{2}::size({3}) * sizeof(real), '
-              'cudaMemcpyHostToDevice); CUDA_CHECK;'.format(gpu_arrayName,
-                                                            cpu_arrayName,
-                                                            tensor.baseName(),
-                                                            formatGroup(tensor)))
+          cpp('device_copy_to((void*){0}, (void*){1}, tensor::{2}::size({3}) * sizeof(real));'.format(gpu_arrayName,
+                                                                                                      cpu_arrayName,
+                                                                                                      tensor.baseName(),
+                                                                                                      formatGroup(tensor)))
         cpp.emptyline()
 
         cpp("// TODO: allocate pointers for temp variables and scratch buffers on GPU")
@@ -272,18 +271,17 @@ with Cpp(os.path.join(outDir, 'performance.cu')) as cpp:
 
               # prevent multiple occurances of the same tensor
               if cpu_arrayName not in computation_results:
-                cpp('cudaMemcpy({0}, {1}, tensor::{2}::size({3}) * sizeof(real), '
-                    'cudaMemcpyDeviceToHost); CUDA_CHECK;'.format(cpu_arrayName,
-                                                                  gpu_arrayName,
-                                                                  tensor.baseName(),
-                                                                  formatGroup(tensor)))
+                cpp('device_copy_from((void*){0}, (void*){1}, tensor::{2}::size({3}) * sizeof(real));'.format(cpu_arrayName,
+                                                                                                              gpu_arrayName,
+                                                                                                              tensor.baseName(),
+                                                                                                              formatGroup(tensor)))
                 computation_results.add(cpu_arrayName)
 
 
         # free memory allocated for Tensors on GPU
         cpp.emptyline(num_lines=2)
         for key, tensor in tensors:
-          cpp('cudaFree({}); CUDA_CHECK;'.format(formatArrayCudaName(tensor)))
+          cpp('device_free((void*){});'.format(formatArrayCudaName(tensor)))
 
 
         # free memory allocated for Tensors on CPU

@@ -129,7 +129,7 @@ class Generic(object):
 
     return  m.size() * n.size() * (self._flopInit(d.beta) + self._flop(d.alpha) * k.size())
 
-  def generate(self, cpp, routineCache):
+  def generate(self, cpp, routineCache, additional=None):
     d = self._descr
 
     if d.isACsc or d.isBCsc:

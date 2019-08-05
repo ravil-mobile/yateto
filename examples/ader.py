@@ -376,17 +376,18 @@ def gemm_cfg(arch, variant=None):
 
 
 from yateto.helper import GraphvisHelper
-def add(generator, view=True):
-  ader_dg = ADERDG(order=4,
+def add(generator, view=False):
+  ader_dg = ADERDG(order=6,
                    multipleSimulations=1,
                    matricesDir="../../../generated_code/matrices",
                    memLayout="../../../auto_tuning/config/dense.xml")
 
   # Equation-specific kernels
-  #ader_dg.addInit(generator)
-  #ader_dg.addLocal(generator)
-  #ader_dg.addNeighbor(generator)
+  ader_dg.addInit(generator)
+  ader_dg.addLocal(generator)
+  ader_dg.addNeighbor(generator)
   ader_dg.addTime(generator)
+
 
   parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-default')
   if view:
