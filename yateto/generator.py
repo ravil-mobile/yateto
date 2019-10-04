@@ -912,7 +912,7 @@ class CudaGenerator(object):
 
 
     #TODO: the following block is needed for rendering parse trees
-    debug = True
+    debug = False
     if debug:
       # render and save all optimized parse trees in image files
       parse_tree_visuzlizer = GraphvisHelper(output_dir='./parse-tree-optimized')

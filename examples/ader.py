@@ -386,6 +386,9 @@ def add(generator, view=False):
   ader_dg.addInit(generator)
   ader_dg.addLocal(generator)
   ader_dg.addNeighbor(generator)
+  ader_dg.addInit(generator)
+  ader_dg.addLocal(generator)
+  ader_dg.addNeighbor(generator)
   ader_dg.addTime(generator)
 
 
