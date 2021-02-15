@@ -446,3 +446,23 @@ class LoopOverGEMM(BinOp):
     Bstr = self.indexString('B', [self._k, self._n], self.rightTerm().indices, self._transB)
     Cstr = self.indexString('C', [self._m, self._n], self.indices)
     return '{} [{}]: {} = {} {}'.format(type(self).__name__, self.indices, Cstr, Astr, Bstr)
+
+
+class FusedGEMMs(Op):
+  def __init__(self, *args):
+    super().__init__()
+
+  def add(self, node):
+    if isinstance(node, LoopOverGEMM):
+      self._children.append(node)
+    else:
+      raise ValueError(f'expected LoopOverGEMM, received: {type(node)}')
+
+  def nonZeroFlops(self):
+    nzFlops = 0
+    for child in self._children:
+      nzFlops += child.nonZeroFlops()
+    return nzFlops
+
+  def is_empty(self):
+    return len(self._children) == 0

@@ -62,7 +62,7 @@ class Kernel(object):
     self.cfg = ast2cf.cfg()
     self.cfg = LivenessAnalysis().visit(self.cfg)
   
-  def prepareUntilCodeGen(self, costEstimator):
+  def prepareUntilCodeGen(self, costEstimator, target):
     self.nonZeroFlops = 0
     for a in self.ast:
       ast = copy.deepcopy(a)
@@ -99,6 +99,8 @@ class Kernel(object):
     self.cfg = SubstituteBackward().visit(self.cfg)
     self.cfg = RemoveEmptyStatements().visit(self.cfg)
     self.cfg = MergeActions().visit(self.cfg)
+    if target == 'gpu':
+      self.cfg = FindFusedGemms().visit(self.cfg)
     
 class KernelFamily(object):
   GROUP_INDEX = r'\((0|[1-9]\d*)\)'
@@ -172,7 +174,7 @@ class KernelFamily(object):
   
   def prepareUntilCodeGen(self, costEstimator):
     for kernel in self._kernels.values():
-      kernel.prepareUntilCodeGen(costEstimator)
+      kernel.prepareUntilCodeGen(costEstimator, kernel.target)
 
 def simpleParameterSpace(*args):
   return list(itertools.product(*[list(range(i)) for i in args]))
@@ -291,7 +293,7 @@ class Generator(object):
     print('Optimizing ASTs...')
     for kernel in self._kernels:
       print(kernel.name)
-      kernel.prepareUntilCodeGen(costEstimator)
+      kernel.prepareUntilCodeGen(costEstimator, kernel.target)
     for family in self._kernelFamilies.values():
       print(family.name)
       family.prepareUntilCodeGen(costEstimator)

@@ -1,5 +1,7 @@
 from .graph import *
 from collections import deque
+from ..ast.node import LoopOverGEMM
+
 
 class MergeScalarMultiplications(object):   
   def visit(self, cfg):
@@ -146,4 +148,21 @@ class DetermineLocalInitialization(object):
 
     if len(cfg) > 0:
       cfg[0].initBuffer = bufferSize
+    return cfg
+
+
+class FindFusedGemms(object):
+  def __init__(self):
+    pass
+
+  def visit(self, cfg):
+    fused_actions = FusedActions()
+    for pp in cfg:
+      if pp.action and pp.action.isRHSExpression():
+        node = pp.action.term.node
+        if isinstance(node, LoopOverGEMM):
+          fused_actions.add(pp.action)
+
+    if not fused_actions.is_empty():
+      cfg.append(FusedProgramPoint(fused_actions))
     return cfg
