@@ -54,6 +54,7 @@ class Variable(object):
     if self.name == name:
       self.writable = True
 
+
 class Expression(object):
   def __init__(self, node, memoryLayout, variables):
     self.node = node
@@ -152,7 +153,7 @@ class FusedActions(object):
     self._actions.append(action)
 
     self._variables[action.result] = None
-    for var in action.term._variables:
+    for var in action.term.variableList():
       self._variables[var] = None
 
   def _gen_program_action(self) -> ProgramAction:
@@ -169,7 +170,7 @@ class FusedActions(object):
 
     result: Variable = self._actions[-1].result
     return Expression(node=node,
-                      memoryLayout=result._memoryLayout,
+                      memoryLayout=result.memoryLayout(),
                       variables=self._variables.keys())
 
   def is_empty(self) -> bool:
