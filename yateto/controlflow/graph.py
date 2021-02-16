@@ -94,6 +94,7 @@ class Expression(object):
     for v in self._variables:
       v.setWritable(name)
 
+
 class ProgramAction(object):
   def __init__(self, result, term, add, scalar=None):
     self.result = result
@@ -140,10 +141,13 @@ class ProgramAction(object):
     self.term.setWritable(name)
 
 
+# TODO: probably should be a subclass of ProgramAction
 class FusedActions(object):
   def __init__(self):
     self._actions: List[ProgramAction] = []
-    self._variables: Dict[Variable, None] = OrderedDict()
+    self._variables: List[Variable] = []
+    self._adds: List[bool] = []
+    self._scalars = []
 
   def add(self, action: ProgramAction) -> None:
     if not isinstance(action.term.node, LoopOverGEMM):
@@ -151,17 +155,17 @@ class FusedActions(object):
                        f'given: {type(action.term.node)}')
 
     self._actions.append(action)
+    self._variables.append(action.result)
+    self._variables.extend(action.term.variableList())
+    self._adds.append(action.add)
+    self._scalars.append(action.scalar)
 
-    self._variables[action.result] = None
-    for var in action.term.variableList():
-      self._variables[var] = None
-
-  def _gen_program_action(self) -> ProgramAction:
+  def gen_program_action(self) -> ProgramAction:
     last_action: ProgramAction = self._actions[-1]
     return ProgramAction(result=last_action.result,
                          term=self._gen_expr(),
-                         add=last_action.add,
-                         scalar=last_action.scalar)
+                         add=self._adds,
+                         scalar=self._scalars)
 
   def _gen_expr(self) -> Expression:
     node = FusedGEMMs()
@@ -171,7 +175,7 @@ class FusedActions(object):
     result: Variable = self._actions[-1].result
     return Expression(node=node,
                       memoryLayout=result.memoryLayout(),
-                      variables=self._variables.keys())
+                      variables=self._variables)
 
   def is_empty(self) -> bool:
     return len(self._actions) == 0
@@ -187,5 +191,6 @@ class ProgramPoint(object):
 
 class FusedProgramPoint(ProgramPoint):
   def __init__(self, action: FusedActions):
-    super().__init__(action._gen_program_action())
+    super().__init__(action.gen_program_action())
+    # TODO: fix liveness
     self.live = set()

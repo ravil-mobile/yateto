@@ -449,7 +449,7 @@ class LoopOverGEMM(BinOp):
 
 
 class FusedGEMMs(Op):
-  def __init__(self, *args):
+  def __init__(self):
     super().__init__()
 
   def add(self, node):
@@ -457,6 +457,12 @@ class FusedGEMMs(Op):
       self._children.append(node)
     else:
       raise ValueError(f'expected LoopOverGEMM, received: {type(node)}')
+
+  def get_children(self):
+    return self._children
+
+  def get_child(self, index):
+    return self._children[index]
 
   def nonZeroFlops(self):
     nzFlops = 0
