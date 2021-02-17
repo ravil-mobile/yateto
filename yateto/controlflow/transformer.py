@@ -1,6 +1,7 @@
 from .graph import *
 from collections import deque
 from ..ast.node import LoopOverGEMM
+from .fused_gemm_automata import Context as FusedGemmsContext
 
 
 class MergeScalarMultiplications(object):   
@@ -152,17 +153,12 @@ class DetermineLocalInitialization(object):
 
 
 class FindFusedGemms(object):
-  def __init__(self):
-    pass
-
   def visit(self, cfg):
-    fused_actions = FusedActions()
-    for pp in cfg:
-      if pp.action and pp.action.isRHSExpression():
-        node = pp.action.term.node
-        if isinstance(node, LoopOverGEMM):
-          fused_actions.add(pp.action)
-
-    if not fused_actions.is_empty():
-      cfg.append(FusedProgramPoint(fused_actions))
+    context = FusedGemmsContext.get_finite_automata()
+    try:
+      for pp in cfg:
+        context.process(pp)
+      cfg = context.get_cfg()
+    except Expression as err:
+      print(f'Warning: {err}')
     return cfg

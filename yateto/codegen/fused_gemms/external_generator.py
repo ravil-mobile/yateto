@@ -20,13 +20,12 @@ class FusedGemms:
     self._tmp_matrices = {}
     self._matrices = {}
     gemm_list = []
-    for index, item in enumerate(self._descr):
+    flops = 0
+    for item in self._descr:
       node, args, add, scalar = item
       res, op1, op2 = args
 
       self._get_matrices(node, res, op1, op2)
-
-      print(f'index: {index}')
       gemm_list.append(GemmDescr(trans_a=node.transA(),
                                  trans_b=node.transB(),
                                  a=self._matrices[op1.name],
@@ -34,6 +33,7 @@ class FusedGemms:
                                  c=self._matrices[res.name],
                                  alpha=scalar,
                                  beta=1.0 if add else 0.0))
+      flops += gemm_list[-1].compute_flops()
 
     vm = vm_factory(name=self._arch.name,
                     sub_name=self._arch.sub_name,
@@ -42,12 +42,10 @@ class FusedGemms:
     gemmboost_generator = GemmBoostGenerator(gemm_list, vm)
     gemmboost_generator.generate()
 
-    call_site = self._gen_call_size(gemmboost_generator)
-    cpp(f'// {call_site}')
+    cpp(f'{self._gen_call_size(gemmboost_generator)}')
     routine_name = gemmboost_generator.get_base_name()
     routineCache.addRoutine(routine_name, GemmBoostWriter(gemmboost_generator))
-
-    return 0
+    return flops
 
   def _get_matrices(self, node, res, op1, op2):
     res_tensor = IndexedTensorDescription.fromNode(res, node)
