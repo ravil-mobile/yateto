@@ -1,8 +1,8 @@
 from ..common import TensorDescription, IndexedTensorDescription, BatchedOperationsAux
 from ...ast.indices import BoundingBox
-from collections import OrderedDict
+from ..cache import RoutineGenerator, GpuRoutineGenerator
 from gemmboost.interfaces import YatetoInterface as yi
-from gemmboost.common import GemmDescr, Addressing, FloatingPointType
+from gemmboost.common import GemmDescr, Addressing, FloatingPointType, DataFlowDirection
 from gemmboost.common import vm_factory, generate_tmp_matrix
 from gemmboost.backend.generator import Generator as GemmBoostGenerator
 
@@ -39,11 +39,13 @@ class FusedGemms:
                     sub_name=self._arch.sub_name,
                     fp_type=FloatingPointType.str2enum(self._arch.typename))
 
-    gpu_generator = GemmBoostGenerator(gemm_list, vm)
-    gpu_generator.set_kernel_name('test')
-    gpu_generator.generate()
+    gemmboost_generator = GemmBoostGenerator(gemm_list, vm)
+    gemmboost_generator.generate()
 
-    cpp('// call gemmboost();')
+    call_site = self._gen_call_size(gemmboost_generator)
+    cpp(f'// {call_site}')
+    routine_name = gemmboost_generator.get_base_name()
+    routineCache.addRoutine(routine_name, GemmBoostWriter(gemmboost_generator))
 
     return 0
 
@@ -94,6 +96,30 @@ class FusedGemms:
     self._tmp_matrices[res_name] = tmp_matrix
     return tmp_matrix
 
+  def _gen_call_size(self, generator):
+    mat_name_map = {}
+    offset_name_map = {}
+    for name, matrix in self._matrices.items():
+      if matrix.direction == DataFlowDirection.SOURCE:
+        ptr_type = f'{self._arch.typename} {Addressing.addr2ptr_type(matrix.addressing)}'
+        mat_name_map[name] = f'const_cast<const {ptr_type}>({name})'
+      else:
+        mat_name_map[name] = name
+
+      if matrix.is_tmp or matrix.addressing == Addressing.NONE:
+        offset_name_map[name] = '0'
+      else:
+        offset_name_map[name] = f'{BatchedOperationsAux.EXTRA_OFFSET_NAME}_{name}'
+
+    beta = 1.0 if self._descr.add[-1] else 0.0
+    alpha = self._descr.scalar[-1]
+    return generator.generate_call_site(mat_name_map,
+                                        offset_name_map,
+                                        alpha,
+                                        beta,
+                                        BatchedOperationsAux.NUM_ELEMENTS_NAME,
+                                        BatchedOperationsAux.STREAM_PTR_NAME)
+
   @classmethod
   def _get_gemm_mnk(cls, op1, trans_op1, op2, trans_op2):
     bbox_op1 = BoundingBox.fromSpp(op1.eqspp)
@@ -105,3 +131,28 @@ class FusedGemms:
     m = bbox_op1[1 - k_op1]
     n = bbox_op2[1 - k_op2]
     return m, n, k
+
+
+class GemmBoostWriter(GpuRoutineGenerator):
+  def __init__(self, gemmboost_generator):
+    self._basename = gemmboost_generator.get_base_name()
+    self._declaration = gemmboost_generator.get_header()
+    self._launcher = gemmboost_generator.get_launcher()
+    self._kernel = gemmboost_generator.get_kernel()
+
+  def __eq__(self, other):
+    if isinstance(other, GemmBoostWriter):
+      return self._basename == other._basename
+    else:
+      return False
+
+  def header(self, cpp):
+    #cpp.include('gemmboost_aux.h')
+    pass
+
+  def __call__(self, routineName, fileName):
+    with open(fileName, 'a') as file:
+      file.write(self._kernel)
+      file.write(self._launcher)
+
+    return self._declaration
