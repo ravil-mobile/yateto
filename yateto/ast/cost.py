@@ -41,6 +41,7 @@ class CachedCostEstimator(CostEstimator):
     self._cost[node] = cost
     return cost
 
+
 class BoundingBoxCostEstimator(CachedCostEstimator):
   def __init__(self):
     super().__init__()
@@ -71,13 +72,49 @@ class BoundingBoxCostEstimator(CachedCostEstimator):
     self._cache[node] = bb
 
     return bb.size()
-  
+
   def estimate_IndexSum(self, node):
     tbb = self._cache[node.term()]
     pos = node.term().indices.find(str(node.sumIndex()))
     bb = BoundingBox([r for i,r in enumerate(tbb) if i != pos])
     self._cache[node] = bb
     return tbb.size() - bb.size()
+
+
+class GpuBoundingBoxCostEstimator(BoundingBoxCostEstimator):
+  def __init__(self):
+    super().__init__()
+
+  def estimate_Product(self, node):
+    lbb = self._cache[node.leftTerm()]
+    rbb = self._cache[node.rightTerm()]
+    lind = node.leftTerm().indices
+    rind = node.rightTerm().indices
+    ranges = list()
+    for index in node.indices:
+      if index in lind and index in rind:
+        lpos = lind.find(index)
+        rpos = rind.find(index)
+        ranges.append(lbb[lpos] & rbb[rpos])
+      elif index in lind:
+        ranges.append(lbb[lind.find(index)])
+      elif index in rind:
+        ranges.append(rbb[rind.find(index)])
+      else:
+        raise RuntimeError('Not supposed to happen.')
+    bb = BoundingBox(ranges)
+    self._cache[node] = bb
+
+    # TODO: find a better way
+    return BoundingBox(bb[1:]).size() + 10 * rbb.size()
+
+  def estimate_IndexSum(self, node):
+    tbb = self._cache[node.term()]
+    pos = node.term().indices.find(str(node.sumIndex()))
+    bb = BoundingBox([r for i, r in enumerate(tbb) if i != pos])
+    self._cache[node] = bb
+    # TODO: find a better way
+    return 0
 
 class ExactCost(CachedCostEstimator):
   def __init__(self):
