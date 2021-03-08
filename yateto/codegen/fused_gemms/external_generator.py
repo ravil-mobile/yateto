@@ -16,7 +16,6 @@ class FusedGemms:
     self._tmp_matrices = {}
 
   def generate(self, cpp, routineCache, cfg):
-    print('calling gemmboost')
     self._tmp_matrices = {}
     self._cache = {}
     gemm_list = []
@@ -40,7 +39,7 @@ class FusedGemms:
                     fp_type=FloatingPointType.str2enum(self._arch.typename))
 
     gemmboost_generator = GemmBoostGenerator(gemm_list, vm)
-    gemmboost_generator.generate()
+    gemmboost_generator.register()
 
     cpp(f'{self._gen_call_size(gemmboost_generator)}')
     routine_name = gemmboost_generator.get_base_name()
@@ -139,10 +138,8 @@ class FusedGemms:
 
 class GemmBoostWriter(GpuRoutineGenerator):
   def __init__(self, gemmboost_generator):
-    self._basename = gemmboost_generator.get_base_name()
-    self._declaration = gemmboost_generator.get_header()
-    self._launcher = gemmboost_generator.get_launcher()
-    self._kernel = gemmboost_generator.get_kernel()
+    self._generator = gemmboost_generator
+    self._basename = self._generator.get_base_name()
 
   def __eq__(self, other):
     if isinstance(other, GemmBoostWriter):
@@ -155,8 +152,12 @@ class GemmBoostWriter(GpuRoutineGenerator):
     pass
 
   def __call__(self, routineName, fileName):
-    with open(fileName, 'a') as file:
-      file.write(self._kernel)
-      file.write(self._launcher)
+    self._generator.generate()
+    launcher = self._generator.get_launcher()
+    kernel = self._generator.get_kernel()
 
-    return self._declaration
+    with open(fileName, 'a') as file:
+      file.write(kernel)
+      file.write(launcher)
+
+    return self._generator.get_header()
