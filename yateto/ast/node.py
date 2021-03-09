@@ -447,6 +447,14 @@ class LoopOverGEMM(BinOp):
     Cstr = self.indexString('C', [self._m, self._n], self.indices)
     return '{} [{}]: {} = {} {}'.format(type(self).__name__, self.indices, Cstr, Astr, Bstr)
 
+  def is_gemm(self):
+    left_indices = self.leftTerm().indices
+    right_indices = self.rightTerm().indices
+    if not (len(left_indices) == 2 and len(right_indices) == 2):
+      return False
+
+    return True if len(left_indices - right_indices) == 1 else False
+
 
 class FusedGEMMs(Op):
   def __init__(self):
