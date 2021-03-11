@@ -102,7 +102,8 @@ class Kernel(object):
     self.cfg = MergeActions().visit(self.cfg)
     if self.target == 'gpu':
       self.cfg = FindFusedGemms().visit(self.cfg)
-    
+      self.cfg = LivenessAnalysis().visit(self.cfg)
+
 class KernelFamily(object):
   GROUP_INDEX = r'\((0|[1-9]\d*)\)'
   VALID_NAME = r'^{}({})$'.format(Kernel.BASE_NAME, GROUP_INDEX)

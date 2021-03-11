@@ -192,5 +192,3 @@ class ProgramPoint(object):
 class FusedProgramPoint(ProgramPoint):
   def __init__(self, action: FusedActions):
     super().__init__(action.gen_program_action())
-    # TODO: fix liveness
-    self.live = set()
