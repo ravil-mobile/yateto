@@ -1,4 +1,11 @@
-from .external_generator import FusedGemms
+import importlib.util
+gb_spec = importlib.util.find_spec('gemmboost')
+try:
+  if gb_spec:
+    gb = gb_spec.loader.load_module()
+    from .external_generator import FusedGemms
+except:
+  raise ('Found gemmbost speck but cannot load. Please, check installation of gemmboost')
 
 
 class Description(object):
@@ -27,9 +34,8 @@ class Description(object):
       raise StopIteration
 
 
-
 def generator(arch, descr, target):
-  if target == 'gpu':
+  if target == 'gpu' and gb_spec:
     return FusedGemms(arch, descr)
   else:
-    ValueError(f'expected a GPU target, given {target}')
+    raise NotImplementedError(f'no implementation found for {target} target')
